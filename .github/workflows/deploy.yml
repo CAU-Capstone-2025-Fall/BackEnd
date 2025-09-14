@@ -1,0 +1,50 @@
+name: Deploy to EC2 on push
+
+on:
+  push:
+    branches: ["main"] # main 브랜치에 push될 때 실행
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Add EC2 to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: SSH into EC2 & deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }} # ec2-user
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.EC2_PATH }}"
+
+            # 최신 코드 가져오기
+            git fetch --all
+            git reset --hard origin/main
+
+            # 의존성 설치
+            if [ -f requirements.txt ]; then
+              "${{ secrets.EC2_VENV }}/bin/pip" install --upgrade pip
+              "${{ secrets.EC2_VENV }}/bin/pip" install -r requirements.txt
+            fi
+
+            # 서비스 재시작
+            sudo systemctl restart "${{ secrets.SERVICE_NAME }}"
+
+            # 상태 확인
+            systemctl --no-pager --full status "${{ secrets.SERVICE_NAME }}" | head -n 30
+
+      - name: Health check
+        run: |
+          curl -fsS "http://${{ secrets.EC2_HOST }}:8000/docs" >/dev/null
+          echo "Health check OK ✅"
