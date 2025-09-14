@@ -1,32 +1,50 @@
-- name: SSH into EC2 & deploy
-  uses: appleboy/ssh-action@v1.0.3
-  with:
-    host: ${{ secrets.EC2_HOST }}
-    username: ${{ secrets.EC2_USER }}
-    key: ${{ secrets.SSH_PRIVATE_KEY }}
-    script_stop: true
-    script: |
-      set -euo pipefail
-      cd "${{ secrets.EC2_PATH }}"
+name: Deploy FastAPI to EC2
 
-      # venv 없으면 생성
-      if [ ! -d "${{ secrets.EC2_VENV }}" ]; then
-        python3 -m venv "${{ secrets.EC2_VENV }}"
-      fi
+on:
+  push:
+    branches: [main]
+    paths:
+      - "BackEnd/**"
+      - ".github/workflows/deploy.yml"
 
-      # 최신 코드 가져오기
-      git fetch --all
-      git reset --hard origin/main
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-      # pip 보장 및 의존성 설치
-      "${{ secrets.EC2_VENV }}/bin/python" -m ensurepip --upgrade || true
-      "${{ secrets.EC2_VENV }}/bin/python" -m pip install --upgrade pip
-      if [ -f requirements.txt ]; then
-        "${{ secrets.EC2_VENV }}/bin/pip" install -r requirements.txt
-      fi
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      # 서비스 재시작
-      sudo systemctl restart "${{ secrets.SERVICE_NAME }}"
+      # (옵션) git 서브모듈 쓰면 여기에 submodules: recursive 추가
 
-      # 상태 확인
-      systemctl --no-pager --full status "${{ secrets.SERVICE_NAME }}" | head -n 30
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.EC2_PATH }}"
+
+            # venv 없으면 생성
+            if [ ! -d "${{ secrets.EC2_VENV }}" ]; then
+              python3 -m venv "${{ secrets.EC2_VENV }}"
+            fi
+
+            # 코드 최신화
+            git fetch --all
+            git reset --hard origin/main
+
+            # 의존성
+            "${{ secrets.EC2_VENV }}/bin/python" -m ensurepip --upgrade || true
+            "${{ secrets.EC2_VENV }}/bin/python" -m pip install --upgrade pip
+            if [ -f requirements.txt ]; then
+              "${{ secrets.EC2_VENV }}/bin/pip" install -r requirements.txt
+            fi
+
+            # 서비스 재시작 (systemd)
+            sudo systemctl daemon-reload || true
+            sudo systemctl restart fastapi
+            sudo systemctl status fastapi --no-pager -l || true
