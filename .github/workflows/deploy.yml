@@ -1,50 +1,32 @@
-name: Deploy to EC2 on push
+- name: SSH into EC2 & deploy
+  uses: appleboy/ssh-action@v1.0.3
+  with:
+    host: ${{ secrets.EC2_HOST }}
+    username: ${{ secrets.EC2_USER }}
+    key: ${{ secrets.SSH_PRIVATE_KEY }}
+    script_stop: true
+    script: |
+      set -euo pipefail
+      cd "${{ secrets.EC2_PATH }}"
 
-on:
-  push:
-    branches: ["main"] # main 브랜치에 push될 때 실행
+      # venv 없으면 생성
+      if [ ! -d "${{ secrets.EC2_VENV }}" ]; then
+        python3 -m venv "${{ secrets.EC2_VENV }}"
+      fi
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+      # 최신 코드 가져오기
+      git fetch --all
+      git reset --hard origin/main
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      # pip 보장 및 의존성 설치
+      "${{ secrets.EC2_VENV }}/bin/python" -m ensurepip --upgrade || true
+      "${{ secrets.EC2_VENV }}/bin/python" -m pip install --upgrade pip
+      if [ -f requirements.txt ]; then
+        "${{ secrets.EC2_VENV }}/bin/pip" install -r requirements.txt
+      fi
 
-      - name: Add EC2 to known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+      # 서비스 재시작
+      sudo systemctl restart "${{ secrets.SERVICE_NAME }}"
 
-      - name: SSH into EC2 & deploy
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }} # ec2-user
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            cd "${{ secrets.EC2_PATH }}"
-
-            # 최신 코드 가져오기
-            git fetch --all
-            git reset --hard origin/main
-
-            # 의존성 설치
-            if [ -f requirements.txt ]; then
-              "${{ secrets.EC2_VENV }}/bin/pip" install --upgrade pip
-              "${{ secrets.EC2_VENV }}/bin/pip" install -r requirements.txt
-            fi
-
-            # 서비스 재시작
-            sudo systemctl restart "${{ secrets.SERVICE_NAME }}"
-
-            # 상태 확인
-            systemctl --no-pager --full status "${{ secrets.SERVICE_NAME }}" | head -n 30
-
-      - name: Health check
-        run: |
-          curl -fsS "http://${{ secrets.EC2_HOST }}:8000/docs" >/dev/null
-          echo "Health check OK ✅"
+      # 상태 확인
+      systemctl --no-pager --full status "${{ secrets.SERVICE_NAME }}" | head -n 30
