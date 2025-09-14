@@ -14,4 +14,4 @@ app.include_router(items.router)
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello, FastAPI!"}
+    return {"message": "Hello, FastAPI! Github Actions CI/CD is working!"}
