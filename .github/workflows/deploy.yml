@@ -36,7 +36,7 @@ jobs:
             "${{ secrets.EC2_VENV }}/bin/python" -m ensurepip --upgrade || true
             "${{ secrets.EC2_VENV }}/bin/python" -m pip install --upgrade pip
             if [ -f requirements.txt ]; then
-              "${{ secrets.EC2_VENV}/bin/pip" install -r requirements.txt
+              "${{ secrets.EC2_VENV }}/bin/pip" install -r requirements.txt
             fi
 
             # systemd 서비스 재시작
