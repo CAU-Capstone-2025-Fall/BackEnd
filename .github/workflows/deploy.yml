@@ -3,6 +3,7 @@ name: Deploy FastAPI to EC2
 on:
   push:
     branches: [main]
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -10,8 +11,6 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
-      # (옵션) git 서브모듈 쓰면 여기에 submodules: recursive 추가
 
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -24,23 +23,23 @@ jobs:
             set -euo pipefail
             cd "${{ secrets.EC2_PATH }}"
 
-            # venv 없으면 생성
+            # venv 없으면 python3.11 기준으로 생성 (systemd와 맞춤)
             if [ ! -d "${{ secrets.EC2_VENV }}" ]; then
-              python3 -m venv "${{ secrets.EC2_VENV }}"
+              python3.11 -m venv "${{ secrets.EC2_VENV }}"
             fi
 
-            # 코드 최신화
+            # 최신 코드 반영
             git fetch --all
             git reset --hard origin/main
 
-            # 의존성
+            # 의존성 설치 (해당 venv 안에서만!)
             "${{ secrets.EC2_VENV }}/bin/python" -m ensurepip --upgrade || true
             "${{ secrets.EC2_VENV }}/bin/python" -m pip install --upgrade pip
             if [ -f requirements.txt ]; then
-              "${{ secrets.EC2_VENV }}/bin/pip" install -r requirements.txt
+              "${{ secrets.EC2_VENV }}/bin/python" -m pip install -r requirements.txt
             fi
 
-            # 서비스 재시작 (systemd)
+            # 서비스 재시작
             sudo systemctl daemon-reload || true
             sudo systemctl restart fastapi
             sudo systemctl status fastapi --no-pager -l || true
