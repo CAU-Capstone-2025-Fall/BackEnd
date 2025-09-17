@@ -6,16 +6,17 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from routers import chat, items
 
-load_dotenv()  # .env 파일 로드
+load_dotenv()
+API_KEY = os.getenv("API_KEY")
 
-API_KEY = os.getenv("API_KEY") #추후 데이터 로드할때 필요한 키
 app = FastAPI()
-
 app.include_router(items.router)
 app.include_router(crud_api.router)
 app.include_router(chat.router)
-start_scheduler()
 
+@app.on_event("startup")
+def startup_event():
+    start_scheduler()
 
 @app.get("/")
 def read_root():
