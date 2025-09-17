@@ -11,12 +11,12 @@ API_KEY = os.getenv("API_KEY")
 
 app = FastAPI()
 app.include_router(items.router)
-#app.include_router(crud_api.router)
+app.include_router(crud_api.router)
 app.include_router(chat.router)
 
-#@app.on_event("startup")
-#def startup_event():
-    #start_scheduler()
+@app.on_event("startup")
+def startup_event():
+    start_scheduler()
 
 @app.get("/")
 def read_root():
