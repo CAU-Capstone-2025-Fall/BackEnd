@@ -6,3 +6,4 @@ pymongo
 requests
 apscheduler
 openai
+pillow

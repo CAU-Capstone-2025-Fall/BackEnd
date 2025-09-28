@@ -32,23 +32,28 @@ def fetch_and_update():
             "serviceKey": service_key,
             "bgnde": yesterday,
             "state": "protect",
-            "numOfRows": 100,
+            "numOfRows": 50,
             "_type": "json",
             "pageNo": page
         }
-        response = requests.get(url, params=params)
-        data = response.json()
-        items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        response = requests.get(url, params=params, timeout=10)
+        try:
+            data = response.json()
+            items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        except Exception as e:
+            print("JSON 파싱 실패. 원본 응답:", response.text)
+            data = None
+            items = []
         if not items:
             break
         for item in items:
             collection.update_one(
                 {"desertionNo": item["desertionNo"]},
-                {"$set": item},
+                {"$set": {**item, "createdImg": None}},
                 upsert=True
             )
         page += 1
-        sleep(0.01)
+        sleep(0.1)
     print("[자동 데이터 갱신] 완료")
 
 # APScheduler로 매일 새벽 3시 작업 예약

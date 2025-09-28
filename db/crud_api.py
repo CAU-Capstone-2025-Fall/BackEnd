@@ -37,6 +37,7 @@ class Animal(BaseModel):
     noticeEdt: Optional[str] = None
     popfile1: Optional[str] = None
     popfile2: Optional[str] = None
+    createdImg: Optional[str] = None
     processState: Optional[str] = None
     sexCd: Optional[str] = None
     neuterYn: Optional[str] = None
