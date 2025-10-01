@@ -1,9 +1,10 @@
-from PIL import Image
+import os
+from io import BytesIO
+
 import requests
 from fastapi import APIRouter
+from PIL import Image
 from pydantic import BaseModel
-from io import BytesIO
-import os
 
 api_key = os.getenv("OPENAI_API_KEY")
 router = APIRouter(prefix="/image", tags=["image"])
@@ -34,14 +35,12 @@ def url_to_png(image_url):
     buf_mask.seek(0)
 
     return buf, buf_mask
-
 @router.post("/edit")
 async def edit_image(req: ImageEditRequest):
     img_file, mask_file = url_to_png(req.image_url)
     if not img_file:
         return {"error": "이미지 변환 실패"}
 
-    # OpenAI API 전송
     files = {
         "image": ("input.png", img_file, "image/png"),
         "mask": ("mask.png", mask_file, "image/png"),
@@ -51,10 +50,10 @@ async def edit_image(req: ImageEditRequest):
         "prompt": req.prompt,
         "n": 1,
         "size": "1024x1024",
+        # "response_format": "url",  # url 모드 강제 (선택)
     }
     headers = {"Authorization": f"Bearer {api_key}"}
 
-    print("API 요청 프롬프트:", req.prompt)
     response = requests.post(
         "https://api.openai.com/v1/images/edits",
         headers=headers,
@@ -68,4 +67,14 @@ async def edit_image(req: ImageEditRequest):
         return {"error": response.text}
 
     result = response.json()
-    return {"edited_image_url": result["data"][0]["url"]}
+    data_item = result["data"][0]
+
+    if "url" in data_item:
+        return {"edited_image_url": data_item["url"]}
+    elif "b64_json" in data_item:
+        import base64
+        image_bytes = base64.b64decode(data_item["b64_json"])
+        # 필요하다면 파일로 저장하거나 프론트에 직접 전달
+        return {"edited_image_base64": data_item["b64_json"]}
+    else:
+        return {"error": "응답에서 이미지 URL/Base64를 찾을 수 없음"}
