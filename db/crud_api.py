@@ -54,6 +54,8 @@ class Animal(BaseModel):
     updTm: Optional[str] = None
     vaccinationChk: Optional[str] = None
     healthChk: Optional[str] = None
+    improve: Optional[str] = None
+    extractedFeature: Optional[str] = None
 
 def animal_serializer(animal) -> dict:
     animal = dict(animal)
@@ -80,6 +82,9 @@ def get_animals(
     sex_cd: Optional[str] = Query(None, description="성별 코드"),
     care_name: Optional[str] = Query(None, description="보호소 이름"),
     org_name: Optional[str] = Query(None, description="시군구 정보"),
+    neuterYn: Optional[str] = Query(None, description="중성화 여부"),
+    improve: Optional[str] = Query(None, description="개선 여부"),
+
     limit: int = 10,
     skip: int = 0
 ):
@@ -102,6 +107,10 @@ def get_animals(
         query["careNm"] = care_name
     if org_name:
         query["orgNm"] = org_name
+    if neuterYn:
+        query["neuterYn"] = neuterYn
+    if improve:
+        query["improve"] = improve
     animals = list(collection.find(query).skip(skip).limit(limit))
     return [animal_serializer(animal) for animal in animals]
 
