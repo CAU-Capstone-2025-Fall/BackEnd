@@ -2,3 +2,5 @@
 package.json
 __pycache__/
 .venv
+created_images/
+    

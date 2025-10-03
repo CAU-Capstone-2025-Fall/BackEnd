@@ -8,3 +8,4 @@ apscheduler
 openai
 pillow
 python-multipart
+pip install firebase-admin
