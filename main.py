@@ -1,7 +1,8 @@
 import os
 
 from db import crud_api
-from db.auto_fetch import start_scheduler
+
+#from db.auto_fetch import start_scheduler
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from routers import chat, img_edit, items, login, parse
