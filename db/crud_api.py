@@ -1,9 +1,11 @@
 import os
-from typing import List, Optional
+from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from pydantic import BaseModel
-from pymongo import MongoClient
+from pymongo import MongoClient, UpdateOne
+from datetime import datetime
+import re
 
 load_dotenv()
 # app = FastAPI()
@@ -62,7 +64,86 @@ def animal_serializer(animal) -> dict:
     animal["id"] = str(animal["_id"])
     del animal["_id"]
     return animal
+
+def get_priority_score(animal):
+    score = 0
+    today = datetime.today().date()
+
+    # #공고 종료일에 따른 가산점 <- 공고기간은 입양 동물과는 무관
+    # notice_edt = datetime.strptime(animal["noticeEdt"], "%Y%m%d")
+    # until_end = (notice_edt.date() - today).days
+    # if until_end < 7:
+    #     score += 50
+
+    #입소 기간에 따른 가산점
+    happen_dt = datetime.strptime(animal["happenDt"], "%Y%m%d")
+    days = (today - happen_dt.date()).days
+    days = days - 14 # 공고 기간 가산점 제외
+    # 입소 기간이 길수록 가산점 증가
+    if days >= 30:
+        score += days
+    if days >= 60:
+        score += days
+    if days > 90:
+        score += days
+    # 입소 후 3개월 이상인 경우 최대 200점 한도
+    score += min(score, 200)
+
+    #중성화 여부에 따른 가산점
+    if animal.get("neuterYn") == "Y":
+        score += 20
     
+    # 건강 상태에 따른 가산점
+    health = animal.get("specialMark", "").lower()
+    if "불량" in health or "감염" in health or "병" in health:
+        score += 50
+    elif "양호" in health or "건강" in health:
+        score += 20
+
+    # 나이에 따른 가산점
+    age_str = animal.get("age")
+    if age_str:
+        year_str = re.search(r"(\d{4})\(년생\)", age_str)
+        year = int(year_str.group(1)) if year_str else None
+
+        day_str = re.search(r"(\d+)일미만", age_str)
+        day = int(day_str.group(1)) if day_str else None
+    if day: # 1년 미만
+        score += 50
+    elif year:
+        if datetime.today().year - year < 2:
+            score += 30
+        elif datetime.today().year - year < 5:
+            score += 10
+
+    # 사진 개선 여부에 따른 가산점 <- 개선 사진 효과 증대 목적
+    if animal.get("improve") == "1":
+        score += 50
+
+    # 지역에 따른 가산점 추가 가능
+    address = animal.get("careAddr", "")
+    pattern = r'^(\S+도|\S+특별시|\S+광역시|\S+자치시|\S+시)\s+(\S+시|\S+군|\S+구)\s+(\S+구|\S+군|\S+동|\S+읍|\S+면)?'
+
+    match = re.match(pattern, address)
+    if match:
+        sido = match.group(1)
+        sigungu = match.group(2)
+        gita = match.group(3) if match.group(3) else ""
+
+    # if sido == "user_sido":
+    #     score += 30
+    #     if sigungu == "user_sigungu":
+    #         score += 20
+    #         if gita == "user_gita":
+    #             score += 10
+
+    # 추출된 특징에 따른 가산점 추가 가능
+    # feature = animal.get("extractedFeature", "")
+    # if "user_feature" in feature:
+    #     score += 30
+
+    return score
+
 # CREATE
 @router.post("/animal", response_model=dict)
 def create_animal(animal: Animal):
@@ -114,6 +195,55 @@ def get_animals(
     animals = list(collection.find(query).skip(skip).limit(limit))
     return [animal_serializer(animal) for animal in animals]
 
+# READ 우선순위 알고리즘 적용
+@router.get("/animal_priority", response_model=List[dict])
+def get_animals(
+    start_date: Optional[str] = Query(None, description="조회 시작 날짜 (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="조회 끝 날짜 (YYYY-MM-DD)"),
+    happen_place: Optional[str] = Query(None, description="발생 장소"),
+    upkind_nm: Optional[str] = Query(None, description="대분류 이름"),
+    kind_nm: Optional[str] = Query(None, description="세부 품종 이름"),
+    sex_cd: Optional[str] = Query(None, description="성별 코드"),
+    care_name: Optional[str] = Query(None, description="보호소 이름"),
+    org_name: Optional[str] = Query(None, description="시군구 정보"),
+    neuterYn: Optional[str] = Query(None, description="중성화 여부"),
+    improve: Optional[str] = Query(None, description="개선 여부"),
+
+    limit: int = 10,
+    skip: int = 0
+):
+    query = {}
+    if start_date and end_date:
+        query["happenDt"] = {"$gte": start_date, "$lte": end_date}
+    elif start_date:
+        query["happenDt"] = {"$gte": start_date}
+    elif end_date:
+        query["happenDt"] = {"$lte": end_date}
+    if happen_place:
+        query["happenPlace"] = happen_place
+    if upkind_nm:
+        query["upKindNm"] = upkind_nm
+    if kind_nm:
+        query["kindNm"] = kind_nm
+    if sex_cd:
+        query["sexCd"] = sex_cd
+    if care_name:
+        query["careNm"] = care_name
+    if org_name:
+        query["orgNm"] = org_name
+    if neuterYn:
+        query["neuterYn"] = neuterYn
+    if improve:
+        query["improve"] = improve
+
+    animals = list(collection.find(query))
+    animals.sort(key=get_priority_score, reverse=True)
+    animals = animals[skip: skip + limit]
+    for animal in animals:
+        print(get_priority_score(animal))
+    return [animal_serializer(animal) for animal in animals]
+
+
 @router.get("/animal/{desertion_no}", response_model=dict)
 def get_animal(desertion_no: str):
     animal = collection.find_one({"desertionNo": desertion_no})
@@ -137,3 +267,49 @@ def delete_animal(desertion_no: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Animal not found")
     return {"msg": f"Animal {desertion_no} deleted."}
+
+
+@router.get("/animal/notice-ids", response_model=List[str])
+def get_notice_ids_with_improve():
+    cursor = collection.find(
+        {"improve": {"$in": [1, "1"]}},   # int 1 또는 string "1" 모두 매칭
+        {"noticeNo": 1, "_id": 0}
+    )
+    return [doc["noticeNo"] for doc in cursor if "noticeNo" in doc]
+
+
+router = APIRouter()
+
+@router.put("/animal/update-many", response_model=dict)
+def update_animals_by_notice(
+    updates: List[Dict[str, str]] = Body(
+        ..., 
+        description="업데이트할 noticeNo-URL 쌍 리스트. 예: [{'noticeNo': '충남-부여-2025-00331', 'createdImg': 'https://...'}, ...]"
+    )
+):
+    # 유효성 검사
+    if not updates:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    # bulk operation 준비
+    operations = []
+    for item in updates:
+        notice_no = item.get("noticeNo")
+        created_img = item.get("createdImg")
+        if not notice_no or not created_img:
+            raise HTTPException(status_code=400, detail=f"Invalid item: {item}")
+        operations.append(
+            UpdateOne(
+                {"noticeNo": notice_no},
+                {"$set": {"createdImg": created_img}}
+            )
+        )
+
+    # bulk 실행
+    result = collection.bulk_write(operations, ordered=False)
+
+    return {
+        "matched": result.matched_count,
+        "modified": result.modified_count,
+        "acknowledged": result.acknowledged
+    }

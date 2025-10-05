@@ -1,7 +1,7 @@
 import os
 from typing import Optional
 from dotenv import load_dotenv
-from pymongo import MongoClient, UpdateOne
+from pymongo import MongoClient
 
 # db에 필요한 항목만 남기기
 
