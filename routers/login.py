@@ -57,3 +57,9 @@ def protected(request: Request):
     if not token or token not in SESSIONS:
         raise HTTPException(status_code=401, detail="로그인 필요")
     return {"message": f"{SESSIONS[token]} 님 환영합니다!"}
+
+def get_current_username(request: Request) -> str:
+    sid = request.cookies.get("session")
+    if not sid or sid not in SESSIONS:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    return SESSIONS[sid]
