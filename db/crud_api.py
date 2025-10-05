@@ -1,7 +1,7 @@
 import os
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from pymongo import MongoClient, UpdateOne
 from datetime import datetime
@@ -267,6 +267,53 @@ def delete_animal(desertion_no: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Animal not found")
     return {"msg": f"Animal {desertion_no} deleted."}
+
+
+@router.get("/animal/notice-ids", response_model=List[str])
+def get_notice_ids_with_improve():
+    cursor = collection.find(
+        {"improve": {"$in": [1, "1"]}},   # int 1 또는 string "1" 모두 매칭
+        {"noticeNo": 1, "_id": 0}
+    )
+    return [doc["noticeNo"] for doc in cursor if "noticeNo" in doc]
+
+
+router = APIRouter()
+
+@router.put("/animal/update-many", response_model=dict)
+def update_animals_by_notice(
+    updates: List[Dict[str, str]] = Body(
+        ..., 
+        description="업데이트할 noticeNo-URL 쌍 리스트. 예: [{'noticeNo': '충남-부여-2025-00331', 'createdImg': 'https://...'}, ...]"
+    )
+):
+    # 유효성 검사
+    if not updates:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    # bulk operation 준비
+    operations = []
+    for item in updates:
+        notice_no = item.get("noticeNo")
+        created_img = item.get("createdImg")
+        if not notice_no or not created_img:
+            raise HTTPException(status_code=400, detail=f"Invalid item: {item}")
+        operations.append(
+            UpdateOne(
+                {"noticeNo": notice_no},
+                {"$set": {"createdImg": created_img}}
+            )
+        )
+
+    # bulk 실행
+    result = collection.bulk_write(operations, ordered=False)
+
+    return {
+        "matched": result.matched_count,
+        "modified": result.modified_count,
+        "acknowledged": result.acknowledged
+    }
+
 
 
 @router.get("/animal/notice-ids", response_model=List[str])

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key)
 
-app = FastAPI(title="Image Edit Backend with Auto Mask")
+app = FastAPI(title="Chat-like Image Editor")
 router = APIRouter(prefix="/image", tags=["image"])
 
 class ImageEditRequest(BaseModel):
@@ -20,6 +20,7 @@ class ImageEditRequest(BaseModel):
 
 
 def url_to_png(image_url: str):
+    """이미지를 URL에서 받아 PNG로 변환"""
     resp = requests.get(image_url)
     if resp.status_code != 200:
         return None
@@ -31,49 +32,36 @@ def url_to_png(image_url: str):
     return buf
 
 
-def generate_mask_with_gpt(image_url: str):
+@router.post("/chat-edit")
+async def chat_edit(req: ImageEditRequest):
     """
-    GPT Vision 모델에게 이미지를 보여주고
-    '더러운 부분만 흰색, 나머지는 검은색' 마스크 이미지를 생성하게 한다.
+    채팅창처럼 → GPT가 편집 지시(JSON) 반환 → 백엔드가 실행 → 최종 이미지 반환
     """
-    response = client.images.generate(
-        model="gpt-image-1",  # 여기서도 이미지 생성 모델 사용
-        prompt="Generate a binary mask highlighting only dirty areas (mud, stains, foreign substances) in pure white, keep everything else black. Keep exact same resolution.",
-        size="1024x1024",
-        image=[{"url": image_url}]
-    )
-    # 결과는 base64로 반환됨
-    b64_img = response.data[0].b64_json
-    mask_bytes = base64.b64decode(b64_img)
-    return BytesIO(mask_bytes)
-
-
-@router.post("/edit")
-async def edit_image(req: ImageEditRequest):
-    # 1. 프롬프트 정제
+    # 1. GPT에게 이미지 편집 API 호출 스펙(JSON) 생성 요청
     chat_response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "너는 이미지 편집 프롬프트를 DALL·E 편집용으로 정제하는 보조자야."},
-            {"role": "user", "content": f"다음 프롬프트를 이미지 수정용으로 간결하게 정리해줘:\n{req.prompt}"}
-        ]
+            {"role": "system", "content": "너는 OpenAI Images API 전문가다. 사용자의 요청을 기반으로 이미지 편집 API 호출 사양(JSON)을 만들어라."},
+            {"role": "user", "content": f"원본 이미지 URL: {req.image_url}\n프롬프트: {req.prompt}\n\nOpenAI `images/edits` API에 넣을 JSON 스펙을 만들어줘. keys: model, prompt, n, size"}
+        ],
+        response_format={ "type": "json_object" }
     )
-    refined_prompt = chat_response.choices[0].message.content.strip()
 
-    # 2. 원본 이미지와 자동 생성된 마스크 준비
+    spec = chat_response.choices[0].message.content
+    print("GPT가 만든 API 스펙:", spec)
+
+    # 2. 원본 이미지 준비
     img_file = url_to_png(req.image_url)
     if not img_file:
         return {"error": "이미지 다운로드 실패"}
-    mask_file = generate_mask_with_gpt(req.image_url)
 
-    # 3. DALL·E 편집 API 호출
+    # 3. 실제 이미지 편집 API 호출
     files = {
         "image": ("input.png", img_file, "image/png"),
-        "mask": ("mask.png", mask_file, "image/png"),
     }
     data = {
-        "model": "gpt-image-1",
-        "prompt": refined_prompt,
+        "model": "gpt-image-1",  # GPT가 제안한 모델 고정
+        "prompt": req.prompt,    # GPT가 정제한 prompt 대신 원본 prompt 사용 가능
         "n": 1,
         "size": "1024x1024",
     }
@@ -92,10 +80,11 @@ async def edit_image(req: ImageEditRequest):
     result = resp.json()
     data_item = result["data"][0]
 
+    # 4. 최종 결과 반환
     if "url" in data_item:
-        return {"edited_image_url": data_item["url"], "used_prompt": refined_prompt}
+        return {"edited_image_url": data_item["url"], "used_spec": spec}
     elif "b64_json" in data_item:
-        return {"edited_image_base64": data_item["b64_json"], "used_prompt": refined_prompt}
+        return {"edited_image_base64": data_item["b64_json"], "used_spec": spec}
     else:
         return {"error": "이미지 응답 없음"}
 
