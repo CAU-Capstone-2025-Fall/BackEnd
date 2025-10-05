@@ -30,23 +30,25 @@ def _read_all() -> List[dict]:
         try:
             data = json.loads(txt)
         except json.JSONDecodeError:
-            # 손상 복구
+            # 손상 복구: 백업하고 빈 배열로 초기화
             REVIEWS_FILE.with_suffix(".bad.json").write_text(txt, encoding="utf-8")
+            REVIEWS_FILE.write_text("[]", encoding="utf-8")
             data = []
         return data if isinstance(data, list) else []
 
 def _atomic_write(all_items: List[dict]):
     with FILE_LOCK:
-        fd, tmp_path = tempfile.mkstemp(prefix="reviews_", suffix=".json")
+        REVIEWS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            prefix="reviews_", suffix=".json", dir=str(REVIEWS_FILE.parent) 
+        )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(all_items, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, REVIEWS_FILE)
+            os.replace(tmp_path, REVIEWS_FILE) 
         except Exception:
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+            try: os.remove(tmp_path)
+            except: pass
             raise
 
 def _public_url(local_path: str) -> str:
