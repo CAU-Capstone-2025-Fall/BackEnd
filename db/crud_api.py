@@ -278,6 +278,33 @@ def get_notice_ids_with_improve():
     )
     return [doc["noticeNo"] for doc in cursor if "noticeNo" in doc]
 
+@router.put("/animal/image/update", response_model=dict)
+def update_image_by_desertion(data: dict = Body(...)):
+    desertion_no = data.get("desertionNo")
+    created_img = data.get("createdImg")
+
+    if not desertion_no or not created_img:
+        raise HTTPException(status_code=400, detail="Missing desertionNo or createdImg")
+
+    try:
+        uri = os.getenv("MONGODB_URI")
+        client = MongoClient(uri)
+        db = client["testdb"]
+        collection = db["abandoned_animals"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB connection failed: {e}")
+
+    result = collection.update_one(
+        {"desertionNo": desertion_no},
+        {"$set": {"createdImg": created_img}}
+    )
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail=f"Animal {desertion_no} not found")
+
+    return {"msg": f"Image updated for {desertion_no}"}
+
+
 class UpdateItem(BaseModel):
     noticeNo: str
     createdImg: str
