@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Form, File, UploadFile, Depends
 from fastapi import Request
 from routers.login import get_current_username  # ← 위에서 만든 의존성
 
-router = APIRouter()
+router = APIRouter(tags=["review"])
 
 REVIEWS_FILE = Path("reviews.json")
 FILE_LOCK = RLock()

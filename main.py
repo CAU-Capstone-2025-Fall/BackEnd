@@ -6,7 +6,7 @@ from db import crud_api
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from routers import chat, img_edit, items, login, parse
-from routers import reviews_crud 
+from routers import reviews_crud , favorite
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
@@ -22,6 +22,7 @@ app.include_router(img_edit.router)
 app.include_router(parse.router)
 app.include_router(login.router)   # 로그인 라우터 연결
 app.include_router(reviews_crud.router)
+app.include_router(favorite.router)  
 
 #@app.on_event("startup")
 #def startup_event():

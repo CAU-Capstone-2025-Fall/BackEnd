@@ -9,7 +9,7 @@ import re
 
 load_dotenv()
 # app = FastAPI()
-router = APIRouter()
+router = APIRouter(tags=["Animal"])
 
 # DB 연결
 try:
