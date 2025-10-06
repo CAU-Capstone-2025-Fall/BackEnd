@@ -54,7 +54,7 @@ def send_created_img_with_desertion_id(notice_no: str, created_img_url: str):
     # 4️⃣ 외부 API로 desertionNo + createdImg 전송
     # ------------------------------------------------------------
     # 여기에 실제 이미지 업데이트를 처리할 엔드포인트 URL 지정
-    url = "http://3.38.48.153:8000/image/update"  # TODO: 실제 수신 서버 주소로 교체
+    url = "http://3.38.48.153:8000/animal/image/update"  # TODO: 실제 수신 서버 주소로 교체
 
     payload = {
         "desertionNo": desertion_no,
