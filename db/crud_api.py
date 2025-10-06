@@ -278,26 +278,27 @@ def get_notice_ids_with_improve():
     )
     return [doc["noticeNo"] for doc in cursor if "noticeNo" in doc]
 
-
 class UpdateItem(BaseModel):
     noticeNo: str
     createdImg: str
-    
+
+# ✅ 리스트 자체를 또 하나의 모델로 감싸기
+class UpdateRequest(BaseModel):
+    updates: List[UpdateItem]
+
 @router.put("/animal/update-many", response_model=dict)
-def update_animals_by_notice(
-    updates: List[UpdateItem] = Body(...)
-):
+def update_animals_by_notice(req: UpdateRequest):
+    updates = req.updates
     if not updates:
         raise HTTPException(status_code=400, detail="No updates provided")
 
-    operations = []
-    for item in updates:
-        operations.append(
-            UpdateOne(
-                {"noticeNo": item.noticeNo},
-                {"$set": {"createdImg": item.createdImg}}
-            )
+    operations = [
+        UpdateOne(
+            {"noticeNo": item.noticeNo},
+            {"$set": {"createdImg": item.createdImg}}
         )
+        for item in updates
+    ]
 
     result = collection.bulk_write(operations, ordered=False)
     return {
