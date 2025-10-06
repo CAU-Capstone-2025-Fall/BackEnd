@@ -287,7 +287,7 @@ class UpdateRequest(BaseModel):
     updates: List[UpdateItem]
 
 @router.put("/animal/update-many", response_model=dict)
-def update_animals_by_notice(req: UpdateRequest):
+def bulk_update_animals_by_notice(req: UpdateRequest):
     updates = req.updates
     if not updates:
         raise HTTPException(status_code=400, detail="No updates provided")
