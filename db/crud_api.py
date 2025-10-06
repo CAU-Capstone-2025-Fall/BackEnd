@@ -280,13 +280,7 @@ def get_notice_ids_with_improve():
 
 
 @router.put("/animal/update-many", response_model=dict)
-def update_animals_by_notice(
-    updates: List[Dict[str, str]] = Body(
-        ..., 
-        description="업데이트할 noticeNo-URL 쌍 리스트. 예: [{'noticeNo': '충남-부여-2025-00331', 'createdImg': 'https://...'}, ...]"
-    )
-):
-    # 유효성 검사
+def update_animals_by_notice(updates: List[Dict[str, str]]):
     if not updates:
         raise HTTPException(status_code=400, detail="No updates provided")
 
@@ -298,13 +292,12 @@ def update_animals_by_notice(
             raise HTTPException(status_code=400, detail=f"Invalid item: {item}")
         operations.append(
             UpdateOne(
-                {"noticeNo": notice_no},  # ✅ noticeNo로 검색
+                {"noticeNo": notice_no},
                 {"$set": {"createdImg": created_img}}
             )
         )
 
     result = collection.bulk_write(operations, ordered=False)
-
     return {
         "matched": result.matched_count,
         "modified": result.modified_count,
