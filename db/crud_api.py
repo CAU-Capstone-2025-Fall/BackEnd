@@ -280,7 +280,9 @@ def get_notice_ids_with_improve():
 
 
 @router.put("/animal/update-many", response_model=dict)
-def update_animals_by_notice(updates: List[Dict[str, str]]):
+def update_animals_by_notice(
+    updates: List[Dict[str, str]] = Body(...)
+):
     if not updates:
         raise HTTPException(status_code=400, detail="No updates provided")
 
