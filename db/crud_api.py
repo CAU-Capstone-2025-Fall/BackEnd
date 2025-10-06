@@ -279,23 +279,23 @@ def get_notice_ids_with_improve():
     return [doc["noticeNo"] for doc in cursor if "noticeNo" in doc]
 
 
+class UpdateItem(BaseModel):
+    noticeNo: str
+    createdImg: str
+    
 @router.put("/animal/update-many", response_model=dict)
 def update_animals_by_notice(
-    updates: List[Dict[str, str]] = Body(...)
+    updates: List[UpdateItem] = Body(...)
 ):
     if not updates:
         raise HTTPException(status_code=400, detail="No updates provided")
 
     operations = []
     for item in updates:
-        notice_no = item.get("noticeNo")
-        created_img = item.get("createdImg")
-        if not notice_no or not created_img:
-            raise HTTPException(status_code=400, detail=f"Invalid item: {item}")
         operations.append(
             UpdateOne(
-                {"noticeNo": notice_no},
-                {"$set": {"createdImg": created_img}}
+                {"noticeNo": item.noticeNo},
+                {"$set": {"createdImg": item.createdImg}}
             )
         )
 
@@ -303,5 +303,5 @@ def update_animals_by_notice(
     return {
         "matched": result.matched_count,
         "modified": result.modified_count,
-        "acknowledged": result.acknowledged
+        "acknowledged": result.acknowledged,
     }
