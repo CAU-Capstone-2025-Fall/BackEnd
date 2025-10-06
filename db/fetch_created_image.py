@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from fastapi import HTTPException
 from pymongo import MongoClient
 
+#jSON 형태로 생성된 이미지 DB에 입력
+
 # ------------------------------------------------------------
 # 설정 및 초기화
 # ------------------------------------------------------------

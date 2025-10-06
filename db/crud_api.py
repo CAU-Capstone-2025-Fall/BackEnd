@@ -303,33 +303,3 @@ def update_image_by_desertion(data: dict = Body(...)):
         raise HTTPException(status_code=404, detail=f"Animal {desertion_no} not found")
 
     return {"msg": f"Image updated for {desertion_no}"}
-
-
-class UpdateItem(BaseModel):
-    noticeNo: str
-    createdImg: str
-
-# ✅ 리스트 자체를 또 하나의 모델로 감싸기
-class UpdateRequest(BaseModel):
-    updates: List[UpdateItem]
-
-@router.put("/animal/update-many", response_model=dict)
-def bulk_update_animals_by_notice(req: UpdateRequest):
-    updates = req.updates
-    if not updates:
-        raise HTTPException(status_code=400, detail="No updates provided")
-
-    operations = [
-        UpdateOne(
-            {"noticeNo": item.noticeNo},
-            {"$set": {"createdImg": item.createdImg}}
-        )
-        for item in updates
-    ]
-
-    result = collection.bulk_write(operations, ordered=False)
-    return {
-        "matched": result.matched_count,
-        "modified": result.modified_count,
-        "acknowledged": result.acknowledged,
-    }
