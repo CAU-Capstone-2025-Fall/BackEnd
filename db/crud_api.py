@@ -1,11 +1,12 @@
 import os
+import re
+from datetime import datetime
 from typing import Dict, List, Optional
+
 from dotenv import load_dotenv
 from fastapi import APIRouter, Body, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from pymongo import MongoClient, UpdateOne
-from datetime import datetime
-import re
 
 load_dotenv()
 # app = FastAPI()
@@ -277,6 +278,7 @@ def get_notice_ids_with_improve():
     )
     return [doc["noticeNo"] for doc in cursor if "noticeNo" in doc]
 
+
 @router.put("/animal/update-many", response_model=dict)
 def update_animals_by_notice(
     updates: List[Dict[str, str]] = Body(
@@ -288,7 +290,6 @@ def update_animals_by_notice(
     if not updates:
         raise HTTPException(status_code=400, detail="No updates provided")
 
-    # bulk operation 준비
     operations = []
     for item in updates:
         notice_no = item.get("noticeNo")
@@ -297,12 +298,11 @@ def update_animals_by_notice(
             raise HTTPException(status_code=400, detail=f"Invalid item: {item}")
         operations.append(
             UpdateOne(
-                {"noticeNo": notice_no},
+                {"noticeNo": notice_no},  # ✅ noticeNo로 검색
                 {"$set": {"createdImg": created_img}}
             )
         )
 
-    # bulk 실행
     result = collection.bulk_write(operations, ordered=False)
 
     return {
