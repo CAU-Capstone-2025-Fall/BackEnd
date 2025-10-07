@@ -154,7 +154,7 @@ def create_animal(animal: Animal):
     return {"id": str(result.inserted_id)}
 
 # READ (조건에 따른 전체 or desertionNo로 조회)
-@router.get("/animal", response_model=List[dict])
+@router.get("/animal_prev", response_model=List[dict])
 def get_animals(
     start_date: Optional[str] = Query(None, description="조회 시작 날짜 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="조회 끝 날짜 (YYYY-MM-DD)"),
@@ -197,7 +197,7 @@ def get_animals(
     return [animal_serializer(animal) for animal in animals]
 
 # READ 우선순위 알고리즘 적용
-@router.get("/animal_priority", response_model=List[dict])
+@router.get("/animal", response_model=List[dict])
 def get_animals(
     start_date: Optional[str] = Query(None, description="조회 시작 날짜 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="조회 끝 날짜 (YYYY-MM-DD)"),

@@ -1,0 +1,26 @@
+{
+  "userId": "jh1234",
+  "address": "서울특별시 강남구 역삼동",
+  "residenceType": "아파트",
+  "hasPetSpace": "있음",
+  "familyCount": "2",
+  "hasChildOrElder": "있음",
+  "dailyHomeTime": "0~4시간",
+  "hasAllergy": "없음",
+  "allergyAnimal": "",
+  "activityLevel": "매우 활발함",
+  "expectations": [
+    "교감(애정 표현, 함께 놀기)"
+  ],
+  "favoriteAnimals": [
+    "파충류"
+  ],
+  "preferredSize": "중형",
+  "preferredPersonality": [
+    "활발함"
+  ],
+  "careTime": "10분 이하",
+  "budget": "5만 원",
+  "specialEnvironment": "",
+  "additionalNote": ""
+}
