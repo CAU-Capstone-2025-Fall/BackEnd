@@ -36,3 +36,12 @@ async def save_survey(data: SurveyRequest, request: Request):
         f.write(json.dumps(data.model_dump(), ensure_ascii=False, indent=2))
     print("설문 응답 저장:", data.model_dump())
     return {"success": True, "msg": "설문 저장 완료"}
+
+@router.get("/survey/{userId}") # userId.txt 파일 읽어서 응답
+async def get_survey(userId: str):
+    filename = os.path.join(DATA_DIR, f"{userId}.txt")
+    if not os.path.exists(filename):
+        return {"success": False, "msg": "설문 응답이 없습니다."}
+    with open(filename, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return {"success": True, "data": data}
