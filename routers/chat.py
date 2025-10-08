@@ -17,7 +17,12 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 DATA_PATH = "data/multi_embedded.json"
 with open(DATA_PATH, "r", encoding="utf-8") as f:
     DATA = json.load(f)
-
+print(f"DATA 총 개수: {len(DATA)}")
+for i, item in enumerate(DATA[:3]):  # 앞의 3개만 확인
+    print(f"[{i}] answer: {item.get('answer')[:30]}")
+    print(f"   queries 개수: {len(item.get('queries', []))}")
+    print(f"   embedded_queries 개수: {len(item.get('embedded_queries', []))}")
+    print(f"   embedded_queries[0] 길이: {len(item['embedded_queries'][0]) if item['embedded_queries'] else 0}")
 
 # ------------------------------------------------------------
 # Pydantic 모델
@@ -104,5 +109,4 @@ async def ask_chatbot(message: str) -> str:
 @router.post("/ask")
 async def chat_with_bot(req: ChatRequest):
     answer = await ask_chatbot(req.message)
-    return {"answer": answer}
     return {"answer": answer}

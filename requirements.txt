@@ -12,3 +12,4 @@ firebase-admin
 numpy
 pydantic
 scikit-learn
+python-multipart
