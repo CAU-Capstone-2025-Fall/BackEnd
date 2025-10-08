@@ -9,3 +9,6 @@ openai
 pillow
 python-multipart
 firebase-admin
+numpy
+pydantic
+scikit-learn
