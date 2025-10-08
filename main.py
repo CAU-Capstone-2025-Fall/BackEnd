@@ -28,13 +28,13 @@ app.include_router(reviews_crud.router)
 app.include_router(favorite.router)  
 app.include_router(user_info.router)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+#app.add_middleware(
+#    CORSMiddleware,
+#    allow_origins=["*"], 
+#    allow_credentials=True,
+#    allow_methods=["*"],
+#    allow_headers=["*"],
+#)
 
 #@app.on_event("startup")
 #def startup_event():
