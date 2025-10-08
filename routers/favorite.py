@@ -1,56 +1,62 @@
 # routers/favorites.py
-from fastapi import APIRouter, HTTPException, Depends
-from pathlib import Path
-from threading import RLock
-from typing import List, Dict, Any
+import os
+from typing import Any, Dict
+
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, HTTPException
+from pymongo import MongoClient
 from routers.login import get_current_username
+
+load_dotenv()
 
 router = APIRouter(tags=["favorite"])
 
-BASE_DIR = Path("user_favorites")
-BASE_DIR.mkdir(exist_ok=True)
-LOCK = RLock()
+# MongoDB 연결
+client = MongoClient(os.getenv("MONGODB_URI"))
+db = client["testdb"]               # 👉 실제 DB 이름으로 변경 가능
+favorites_col = db["favorites"]     # 새 컬렉션 생성됨 (없으면 자동 생성)
 
-def _file_of(user: str) -> Path:
-    return BASE_DIR / f"{user}.txt"
-
-def _read_ids(user: str) -> List[str]:
-    p = _file_of(user)
-    if not p.exists():
-        return []
-    with LOCK:
-        raw = p.read_text(encoding="utf-8")
-    parts = raw.replace(",", "\n").splitlines()
-    ids: List[str] = []
-    seen = set()
-    for s in parts:
-        s = s.strip()
-        if s and s not in seen:
-            seen.add(s)
-            ids.append(s)
-    return ids
-
-def _write_ids(user: str, ids: List[str]) -> None:
-    p = _file_of(user)
-    text = "\n".join(ids) + ("\n" if ids else "")
-    with LOCK:
-        p.write_text(text, encoding="utf-8")
+# ----------------------------------------------------------
+# 기본 구조:
+# {
+#   "username": "minseok",
+#   "favorites": ["448543202500133", "444457202500540", ...]
+# }
+# ----------------------------------------------------------
 
 @router.get("/favorite", response_model=Dict[str, Any])
 def get_favorites(username: str = Depends(get_current_username)):
-    ids = _read_ids(username)
-    return {"ids": ids}
+    """사용자의 즐겨찾기 목록 반환"""
+    doc = favorites_col.find_one({"username": username})
+    if not doc:
+        favorites_col.insert_one({"username": username, "favorites": []})
+        return {"ids": []}
+    return {"ids": doc.get("favorites", [])}
+
 
 @router.post("/favorite/{animal_id}", response_model=Dict[str, Any])
 def add_favorite(animal_id: str, username: str = Depends(get_current_username)):
-    ids = _read_ids(username)
-    if animal_id not in ids:
-        ids.append(animal_id)
-        _write_ids(username, ids)
-    return {"ids": ids}
+    """즐겨찾기 추가"""
+    doc = favorites_col.find_one({"username": username})
+    if not doc:
+        favorites_col.insert_one({"username": username, "favorites": [animal_id]})
+        return {"ids": [animal_id]}
+
+    favs = doc.get("favorites", [])
+    if animal_id not in favs:
+        favs.append(animal_id)
+        favorites_col.update_one({"username": username}, {"$set": {"favorites": favs}})
+    return {"ids": favs}
+
 
 @router.delete("/favorite/{animal_id}", response_model=Dict[str, Any])
 def remove_favorite(animal_id: str, username: str = Depends(get_current_username)):
-    ids = [x for x in _read_ids(username) if x != animal_id]
-    _write_ids(username, ids)
-    return {"ids": ids}
+    """즐겨찾기 제거"""
+    doc = favorites_col.find_one({"username": username})
+    if not doc:
+        favorites_col.insert_one({"username": username, "favorites": []})
+        return {"ids": []}
+
+    favs = [x for x in doc.get("favorites", []) if x != animal_id]
+    favorites_col.update_one({"username": username}, {"$set": {"favorites": favs}})
+    return {"ids": favs}

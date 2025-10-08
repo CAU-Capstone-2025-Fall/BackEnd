@@ -1,14 +1,22 @@
-import os
 import json
+import os
 from typing import List
-from fastapi import APIRouter, Request
+
+from dotenv import load_dotenv
+from fastapi import APIRouter
 from pydantic import BaseModel
+from pymongo import MongoClient
+
+load_dotenv()
 
 router = APIRouter(prefix="/userinfo", tags=["userinfo"])
 
-DATA_DIR = "survey_data"
-os.makedirs(DATA_DIR, exist_ok=True)
+# MongoDB 연결
+client = MongoClient(os.getenv("MONGODB_URI"))
+db = client["testdb"]             # 👉 실제 DB 이름으로 변경 가능
+userinfo_col = db["userinfo"]     # 새 컬렉션 (없으면 자동 생성)
 
+# -------------------- 모델 정의 --------------------
 class SurveyRequest(BaseModel):
     userId: str
     address: str
@@ -29,19 +37,29 @@ class SurveyRequest(BaseModel):
     specialEnvironment: str
     additionalNote: str
 
-@router.post("/survey") # survey_data 폴더에 userId.txt 파일로 저장
-async def save_survey(data: SurveyRequest, request: Request):
-    filename = os.path.join(DATA_DIR, f"{data.userId}.txt")
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(json.dumps(data.model_dump(), ensure_ascii=False, indent=2))
-    print("설문 응답 저장:", data.model_dump())
+
+# -------------------- CRUD --------------------
+@router.post("/survey")
+async def save_survey(data: SurveyRequest):
+    """
+    설문 응답 저장 (userId 기준으로 upsert)
+    """
+    doc = data.model_dump()
+    userinfo_col.update_one(
+        {"userId": data.userId},
+        {"$set": doc},
+        upsert=True  # 이미 있으면 갱신, 없으면 새로 삽입
+    )
+    print("✅ 설문 응답 저장:", data.userId)
     return {"success": True, "msg": "설문 저장 완료"}
 
-@router.get("/survey/{userId}") # userId.txt 파일 읽어서 응답
+
+@router.get("/survey/{userId}")
 async def get_survey(userId: str):
-    filename = os.path.join(DATA_DIR, f"{userId}.txt")
-    if not os.path.exists(filename):
+    """
+    userId 기준 설문 조회
+    """
+    doc = userinfo_col.find_one({"userId": userId}, {"_id": 0})
+    if not doc:
         return {"success": False, "msg": "설문 응답이 없습니다."}
-    with open(filename, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return {"success": True, "data": data}
+    return {"success": True, "data": doc}
