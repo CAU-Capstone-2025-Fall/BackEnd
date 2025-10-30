@@ -259,10 +259,10 @@ def get_animals(
             if start_age and end_age:
                 if int(start_age) <= age <= int(end_age):
                     filtered_animals.append(animal)
-            elif start_age:
+            elif start_age and not end_age:
                 if age >= int(start_age):
                     filtered_animals.append(animal)
-            elif end_age:
+            elif not start_age and end_age:
                 if age <= int(end_age):
                     filtered_animals.append(animal)
         animals = filtered_animals
