@@ -66,6 +66,17 @@ def animal_serializer(animal) -> dict:
     del animal["_id"]
     return animal
 
+def parse_age(age_str: str):
+    year = None
+    day = None
+    if age_str:
+        year_str = re.search(r"(\d{4})\(년생\)", age_str)
+        year = int(year_str.group(1)) if year_str else None
+
+        day_str = re.search(r"(\d+)일미만", age_str)
+        day = int(day_str.group(1)) if day_str else None
+    return year, day
+
 def get_priority_score(animal):
     score = 0
     today = datetime.today().date()
@@ -103,12 +114,7 @@ def get_priority_score(animal):
 
     # 나이에 따른 가산점
     age_str = animal.get("age")
-    if age_str:
-        year_str = re.search(r"(\d{4})\(년생\)", age_str)
-        year = int(year_str.group(1)) if year_str else None
-
-        day_str = re.search(r"(\d+)일미만", age_str)
-        day = int(day_str.group(1)) if day_str else None
+    year, day = parse_age(age_str)
     if day: # 1년 미만
         score += 50
     elif year:
@@ -209,6 +215,8 @@ def get_animals(
     org_name: Optional[str] = Query(None, description="시군구 정보"),
     neuterYn: Optional[str] = Query(None, description="중성화 여부"),
     improve: Optional[str] = Query(None, description="개선 여부"),
+    start_age: Optional[int] = Query(None, description="구간 시작 나이 (60일 미만 = 0, 1세 = 1, 2세 = 2, ...)"),
+    end_age: Optional[int] = Query(None, description="구간 끝 나이 (60일 미만 = 0, 1세 = 1, 2세 = 2, ...)"),
 
     limit: int = 10,
     skip: int = 0
@@ -238,6 +246,26 @@ def get_animals(
         query["improve"] = improve
 
     animals = list(collection.find(query))
+    # 나이 필터링
+    if start_age is not None or end_age is not None:
+        filtered_animals = []
+        for animal in animals:
+            year, day = parse_age(animal.get("age"))
+            age = 0
+            if day is not None:
+                age = 0
+            elif year is not None:
+                age = datetime.today().year - year + 1
+            if start_age and end_age:
+                if int(start_age) <= age <= int(end_age):
+                    filtered_animals.append(animal)
+            elif start_age:
+                if age >= int(start_age):
+                    filtered_animals.append(animal)
+            elif end_age:
+                if age <= int(end_age):
+                    filtered_animals.append(animal)
+        animals = filtered_animals
     animals.sort(key=get_priority_score, reverse=True)
     animals = animals[skip: skip + limit]
     for animal in animals:
