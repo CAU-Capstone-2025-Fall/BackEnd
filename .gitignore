@@ -3,4 +3,5 @@ package.json
 __pycache__/
 .venv
 created_images/
-    
+imagen/data/sam_vit_h_4b8939.pth
+firebase-key.json

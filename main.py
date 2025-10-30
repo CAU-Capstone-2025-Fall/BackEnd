@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 
-load_dotenv()
+load_dotenv()   
 API_KEY = os.getenv("API_KEY")
 
 app = FastAPI()
