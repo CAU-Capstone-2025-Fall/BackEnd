@@ -251,19 +251,20 @@ def get_animals(
         filtered_animals = []
         for animal in animals:
             year, day = parse_age(animal.get("age"))
-            age = 0
+            age = None
             if day is not None:
                 age = 0
             elif year is not None:
                 age = datetime.today().year - year + 1
-            if start_age and end_age:
-                if int(start_age) <= age <= int(end_age):
-                    filtered_animals.append(animal)
-            elif start_age and not end_age:
+
+            if start_age is not None and end_age is None:
                 if age >= int(start_age):
                     filtered_animals.append(animal)
-            elif not start_age and end_age:
+            elif start_age is None and end_age is not None:
                 if age <= int(end_age):
+                    filtered_animals.append(animal)
+            else:
+                if int(start_age) <= age <= int(end_age):
                     filtered_animals.append(animal)
         animals = filtered_animals
     animals.sort(key=get_priority_score, reverse=True)
