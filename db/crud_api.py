@@ -112,20 +112,24 @@ def get_priority_score(animal):
     elif "양호" in health or "건강" in health:
         score += 20
 
-    # 나이에 따른 가산점
+    # 나이에 따른 가산점 : 나이가 많을수록 가산점
     age_str = animal.get("age")
     year, day = parse_age(age_str)
     if day: # 1년 미만
-        score += 50
+        score += 0
     elif year:
-        if datetime.today().year - year < 2:
+        if datetime.today().year - year > 3:
             score += 30
-        elif datetime.today().year - year < 5:
-            score += 10
+        elif datetime.today().year - year > 5:
+            score += 50
 
     # 사진 개선 여부에 따른 가산점 <- 개선 사진 효과 증대 목적
     if animal.get("improve") == "1":
         score += 50
+
+    # 품종에 따른 가산점 : 비 품종견, 비 품종묘이면 가산점
+    if animal.get("kindNm") in ["믹스견", "한국 고양이"]:
+        score += 30
 
     # 지역에 따른 가산점 추가 가능
     address = animal.get("careAddr", "")
