@@ -1,0 +1,6 @@
+﻿Analysis Step,Result File
+Latent Alignment (PCA/tSNE),latent_alignment_[...].png
+Latent Correlation Heatmap,latent_correlation_heatmap.png
+Latent R²/Pearson,latent_metric_report.csv
+Feature Influence (SHAP),student_shap_latent*.png / .csv
+Downstream Accuracy,downstream_accuracy.csv

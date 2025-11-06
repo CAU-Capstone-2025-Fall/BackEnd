@@ -1,22 +1,35 @@
 # ============================================================
-# 🧩 student_analysis.py
-# Teacher–Student Representation Alignment & Explainability Suite
+# 🧠 Teacher–Student Representation Alignment & Explainability Suite (Refined + Income Normalization in SHAP)
 # ============================================================
-
 import os
 from pathlib import Path
 
+import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import shap
-import umap
+import torch
+import torch.nn as nn
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.manifold import TSNE
 from sklearn.metrics import accuracy_score, r2_score
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
+
+# ============================================================
+# ⚙️ 폰트 설정 (한글 깨짐 방지)
+# ============================================================
+plt.rcParams["axes.unicode_minus"] = False
+if os.name == "nt":
+    plt.rcParams["font.family"] = "Malgun Gothic"
+elif os.name == "posix":
+    if "AppleGothic" in fm.findSystemFonts(fontpaths=None, fontext="ttf"):
+        plt.rcParams["font.family"] = "AppleGothic"
+    else:
+        plt.rcParams["font.family"] = "NanumGothic"
 
 # ============================================================
 # 0️⃣ 경로 및 설정
@@ -25,25 +38,27 @@ BASE_DIR = Path(__file__).resolve().parent
 SAVE_DIR = BASE_DIR / "results_analysis"
 SAVE_DIR.mkdir(exist_ok=True)
 
-A_PATH = BASE_DIR / "data" / "A_processed.csv"
-Z_TEACHER_PATH = BASE_DIR / "results_dist" / "Z_teacher.csv"
-Z_STUDENT_PATH = BASE_DIR / "results_dist" / "Z_student.csv"
+DATA_DIR = BASE_DIR / "data"
+RESULT_DIR = BASE_DIR / "results_dist"
+
+A_PATH = DATA_DIR / "A_processed.csv"
+Z_TEACHER_PATH = RESULT_DIR / "Z_teacher.csv"
+Z_STUDENT_PATH = RESULT_DIR / "Z_student.csv"
+STUDENT_ENCODER_PATH = RESULT_DIR / "student_encoder.pt"
 
 print("📂 Loading data...")
 A = pd.read_csv(A_PATH)
 Z_teacher = pd.read_csv(Z_TEACHER_PATH)
 Z_student = pd.read_csv(Z_STUDENT_PATH)
 assert A.shape[0] == Z_teacher.shape[0] == Z_student.shape[0], "❌ Row mismatch!"
-
 print(f"✅ Loaded: A={A.shape}, Z_teacher={Z_teacher.shape}, Z_student={Z_student.shape}")
 
 # ============================================================
-# 1️⃣ PCA / t-SNE / UMAP 시각화
+# 1️⃣ PCA / t-SNE 시각화
 # ============================================================
 print("\n[STEP 1] Visualizing Teacher–Student Latent Alignment")
 
 def visualize_latent_alignment(Z_teacher, Z_student, method="pca"):
-    # numpy 변환 (feature name 충돌 방지)
     Z_t_np = Z_teacher.to_numpy()
     Z_s_np = Z_student.to_numpy()
 
@@ -51,29 +66,30 @@ def visualize_latent_alignment(Z_teacher, Z_student, method="pca"):
         reducer = PCA(n_components=2)
         Z_t_2d = reducer.fit_transform(Z_t_np)
         Z_s_2d = reducer.transform(Z_s_np)
-    elif method == "tsne":
-        reducer = TSNE(n_components=2, random_state=42)
-        Z_t_2d = reducer.fit_transform(Z_t_np)
-        Z_s_2d = reducer.fit_transform(Z_s_np)
-    elif method == "umap":
-        reducer = umap.UMAP(n_components=2, random_state=42)
-        Z_t_2d = reducer.fit_transform(Z_t_np)
-        Z_s_2d = reducer.fit_transform(Z_s_np)
-    else:
-        raise ValueError("method must be pca, tsne, or umap")
 
-    plt.figure(figsize=(6, 5))
-    plt.scatter(Z_t_2d[:, 0], Z_t_2d[:, 1], alpha=0.5, c="#FF6B6B", label="Teacher")
-    plt.scatter(Z_s_2d[:, 0], Z_s_2d[:, 1], alpha=0.5, c="#4D96FF", label="Student")
+    elif method == "tsne":
+        # ✅ joint fit: teacher + student 합쳐서 같은 공간으로 매핑
+        Z_all = np.concatenate([Z_t_np, Z_s_np])
+        labels = np.array([0]*len(Z_t_np) + [1]*len(Z_s_np))
+        reducer = TSNE(n_components=2, random_state=42)
+        Z_all_2d = reducer.fit_transform(Z_all)
+        Z_t_2d, Z_s_2d = Z_all_2d[:len(Z_t_np)], Z_all_2d[len(Z_t_np):]
+
+    else:
+        raise ValueError("method must be pca or tsne")
+
+    plt.figure(figsize=(6,5))
+    plt.scatter(Z_t_2d[:,0], Z_t_2d[:,1], c="#FF6B6B", alpha=0.5, label="Teacher")
+    plt.scatter(Z_s_2d[:,0], Z_s_2d[:,1], c="#4D96FF", alpha=0.5, label="Student")
     plt.legend()
     plt.title(f"Teacher vs Student — {method.upper()} Projection")
     plt.tight_layout()
     plt.savefig(SAVE_DIR / f"latent_alignment_{method}.png", dpi=200)
     plt.close()
 
-for method in ["pca", "tsne", "umap"]:
+for method in ["pca", "tsne"]:
     visualize_latent_alignment(Z_teacher, Z_student, method)
-print("✅ Saved latent alignment visualizations (PCA/t-SNE/UMAP).")
+print("✅ Saved latent alignment visualizations (PCA/t-SNE).")
 
 # ============================================================
 # 2️⃣ Teacher–Student Correlation Heatmap
@@ -120,47 +136,83 @@ plt.close()
 print("✅ Saved latent metric barplot.")
 
 # ============================================================
-# 4️⃣ SHAP-based Feature Influence Comparison (Teacher vs Student)
+# 4️⃣ SHAP Feature Attribution (Student Encoder)
 # ============================================================
-print("\n[STEP 4] SHAP Comparison: Teacher vs Student Latent Attribution")
+print("\n[STEP 4] SHAP Analysis using Actual Student Encoder")
 
-# SHAP을 위해 각 latent에 대해 간단히 회귀 근사
-# (Teacher latent, Student latent 각각을 입력 A로부터 근사)
-import xgboost as xgb
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-X_sample = A.values[:300]
-feature_names = A.columns
+class StudentEncoder(nn.Module):
+    def __init__(self, input_dim=24, latent_dim=6):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.Linear(input_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, latent_dim)
+        )
+    def forward(self, x):
+        return self.model(x)
+
+# ✅ Load trained student encoder
+state_dict = torch.load(STUDENT_ENCODER_PATH, map_location=device, weights_only=True)
+student_encoder = StudentEncoder(input_dim=A.shape[1], latent_dim=n_latent)
+student_encoder.load_state_dict(state_dict)
+student_encoder.eval()
+
+# ✅ Prepare DataFrame for SHAP
+X_sample_df = A.iloc[:300].copy().astype(np.float32)
+
+# 🔹 월평균 가구소득 + 연령 컬럼 정규화 (데이터는 그대로, SHAP 계산용만 변경)
+scale_cols = [col for col in X_sample_df.columns if ("가구소득" in col or "연령" in col)]
+if len(scale_cols) > 0:
+    for col in scale_cols:
+        vals = np.log1p(X_sample_df[col]) if X_sample_df[col].max() > 10 else X_sample_df[col]
+        vals = (vals - vals.min()) / (vals.max() - vals.min() + 1e-8)
+        X_sample_df[col] = vals
+    print(f"✅ Normalized (for SHAP only): {scale_cols}")
+
+# SHAP 결과 저장용
+all_shap_summary = []
 
 for i in range(n_latent):
-    print(f"   → Explaining latent_{i+1}")
-    y_teacher = Z_teacher.iloc[:,i]
-    y_student = Z_student.iloc[:,i]
+    print(f"   → explaining student_latent_{i+1}")
+    explainer = shap.Explainer(
+        lambda x: student_encoder(torch.tensor(x.values, dtype=torch.float32).to(device))
+                        .detach().cpu().numpy()[:, i],
+        X_sample_df
+    )
+    shap_values = explainer(X_sample_df)
 
-    # XGBoost 회귀로 근사 후 SHAP 해석
-    model_teacher = xgb.XGBRegressor(n_estimators=100, max_depth=3, random_state=42)
-    model_student = xgb.XGBRegressor(n_estimators=100, max_depth=3, random_state=42)
-    model_teacher.fit(A, y_teacher)
-    model_student.fit(A, y_student)
-
-    expl_teacher = shap.Explainer(model_teacher, A)
-    expl_student = shap.Explainer(model_student, A)
-    shap_t = expl_teacher(X_sample)
-    shap_s = expl_student(X_sample)
-
-    plt.figure(figsize=(10,4))
-    plt.subplot(1,2,1)
-    shap.summary_plot(shap_t, A, feature_names=feature_names, show=False)
-    plt.title(f"Teacher latent_{i+1}")
-
-    plt.subplot(1,2,2)
-    shap.summary_plot(shap_s, A, feature_names=feature_names, show=False)
-    plt.title(f"Student latent_{i+1}")
-
+    # ✅ Summary Plot (한글 폰트 적용)
+    plt.figure()
+    shap.summary_plot(
+        shap_values,
+        features=X_sample_df,
+        feature_names=X_sample_df.columns,
+        show=False
+    )
+    plt.title(f"Feature Influence on Student latent_{i+1}")
     plt.tight_layout()
-    plt.savefig(SAVE_DIR / f"shap_compare_latent{i+1}.png", dpi=200)
+    plt.savefig(SAVE_DIR / f"student_shap_latent{i+1}.png", dpi=200)
     plt.close()
 
-print("✅ Saved SHAP comparison plots (Teacher vs Student).")
+    # ✅ SHAP values → DataFrame → CSV 저장
+    df_shap = pd.DataFrame({
+        "Feature": X_sample_df.columns,
+        "MeanAbs_SHAP": np.abs(shap_values.values).mean(axis=0)
+    }).sort_values("MeanAbs_SHAP", ascending=False)
+    df_shap.to_csv(SAVE_DIR / f"student_shap_latent{i+1}.csv", index=False, encoding="utf-8-sig")
+
+    df_shap["Latent"] = f"latent_{i+1}"
+    all_shap_summary.append(df_shap)
+
+pd.concat(all_shap_summary, ignore_index=True).to_csv(
+    SAVE_DIR / "student_shap_all_latents.csv", index=False, encoding="utf-8-sig"
+)
+
+print("✅ Saved SHAP plots and CSV tables (income normalized only in SHAP).")
 
 # ============================================================
 # 5️⃣ Downstream Predictive Check
@@ -193,10 +245,10 @@ print("✅ Saved downstream accuracy comparison.")
 # 6️⃣ Summary Report
 # ============================================================
 summary = {
-    "Latent Alignment (PCA/tSNE/UMAP)": "latent_alignment_[...].png",
+    "Latent Alignment (PCA/tSNE)": "latent_alignment_[...].png",
     "Latent Correlation Heatmap": "latent_correlation_heatmap.png",
     "Latent R²/Pearson": "latent_metric_report.csv",
-    "Feature Influence (SHAP)": "shap_compare_latent*.png",
+    "Feature Influence (SHAP)": "student_shap_latent*.png / .csv",
     "Downstream Accuracy": "downstream_accuracy.csv"
 }
 pd.DataFrame(summary.items(), columns=["Analysis Step", "Result File"]).to_csv(
