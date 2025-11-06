@@ -18,24 +18,50 @@ userinfo_col = db["userinfo"]     # 새 컬렉션 (없으면 자동 생성)
 
 # -------------------- 모델 정의 --------------------
 class SurveyRequest(BaseModel):
-    userId: str
-    address: str
-    residenceType: str
-    hasPetSpace: str
+    # userId: str
+    # address: str
+    # residenceType: str
+    # hasPetSpace: str
+    # familyCount: str
+    # hasChildOrElder: str
+    # dailyHomeTime: str
+    # hasAllergy: str
+    # allergyAnimal: str
+    # activityLevel: str
+    # expectations: List[str]
+    # favoriteAnimals: List[str]
+    # preferredSize: str
+    # preferredPersonality: List[str]
+    # careTime: str
+    # budget: str
+    # specialEnvironment: str
+    # additionalNote: str
+    
+    # 추천 시스템 기반으로 항목들 변경
+    age: str
     familyCount: str
-    hasChildOrElder: str
-    dailyHomeTime: str
-    hasAllergy: str
-    allergyAnimal: str
-    activityLevel: str
-    expectations: List[str]
-    favoriteAnimals: List[str]
-    preferredSize: str
-    preferredPersonality: List[str]
-    careTime: str
+    houseSize: str
     budget: str
-    specialEnvironment: str
-    additionalNote: str
+    sex1: str
+    sex2: str
+    residenceType1: str
+    residenceType2: str
+    residenceType3: str
+    residenceType4: str
+    job1: str
+    job10: str
+    job2: str
+    job3: str
+    job4: str
+    job5: str
+    job6: str
+    job7: str
+    job8: str
+    job9: str
+    petHistory1: str
+    petHistory2: str
+    petHistory3: str
+    wantingPet: str
 
 
 # -------------------- CRUD --------------------
