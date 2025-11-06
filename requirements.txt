@@ -9,7 +9,27 @@ openai
 pillow
 python-multipart
 firebase-admin
-numpy
 pydantic
 scikit-learn
 python-multipart
+torch==2.4.0      # CPU-only 버전 자동 설치됨
+numpy
+pandas
+scikit-learn
+matplotlib
+tqdm
+numpy==1.26.4
+
+# Explainability & Visualization
+shap
+matplotlib
+seaborn
+plotly
+scipy
+
+# Dimensionality Reduction & Clustering
+umap-learn
+
+# Utils
+tqdm
+pyyaml
