@@ -36,8 +36,9 @@ class SurveyRequest(BaseModel):
     # budget: str
     # specialEnvironment: str
     # additionalNote: str
-    
+
     # 추천 시스템 기반으로 항목들 변경
+    userId: str
     age: str
     familyCount: str
     houseSize: str
