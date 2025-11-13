@@ -1,0 +1,13 @@
+{
+  "best_params": {
+    "z_dim_A": 64,
+    "z_dim_B": 80,
+    "enc_scale": 0.5,
+    "clf_scale": 0.5,
+    "p_drop": 0.3699098654376025,
+    "lr": 0.0015678643146109944,
+    "weight_decay": 5.062132504795329e-05
+  },
+  "best_value": 0.16058545552267886,
+  "device": "cpu"
+}

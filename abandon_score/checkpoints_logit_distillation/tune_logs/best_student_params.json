@@ -1,0 +1,13 @@
+{
+  "best_params": {
+    "alpha": 0.7144982310634325,
+    "temperature": 5.8972747147994955,
+    "lr": 0.00038240114294912274,
+    "weight_decay": 2.898263644142953e-05,
+    "p_drop": 0.20759320998196443,
+    "z_dim": 128,
+    "n_layers_enc": 1,
+    "n_layers_clf": 1
+  },
+  "best_value(MinValLoss)": Infinity
+}

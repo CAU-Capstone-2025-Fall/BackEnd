@@ -1,0 +1,12 @@
+{
+  "best_params": {
+    "lr": 0.00037183607727766003,
+    "weight_decay": 2.815810497867409e-05,
+    "p_drop": 0.37037427020276426,
+    "z_dim": 32,
+    "enc_hidden": "(128,)",
+    "clf_hidden": "(256,)",
+    "use_layernorm": false
+  },
+  "best_value(Accuracy)": 0.8613861386138614
+}

@@ -1,0 +1,70 @@
+# =========================================
+# config.yaml (Y_4labels 회귀용 최종)
+# =========================================
+paths:
+  base_dir: "."
+  data_dir: "../data"
+  weak_dir: "../data/weak_labels" # (사용 안 함)
+
+filenames:
+  A_candidates: ["A_noex"]
+  B_candidates: ["B_clean"]
+  Y_candidates: ["Y_4labels"] # ⬅️ data/label/Y_4labels.csv를 찾도록 설정
+
+seed: 42
+device: "auto"
+
+# =========================================
+# 🧠 Teacher / Student Model Settings
+# =========================================
+teacher_model:
+  z_dim_A: 32
+  z_dim_B: 32
+  encA_hidden: [128]
+  encB_hidden: [128]
+  clf_hidden: [128, 64]
+  p_drop: 0.15
+  use_layernorm: false # ⬅️ BatchNorm1d 사용
+
+student_model:
+  z_dim: 32
+  enc_hidden: [128]
+  clf_hidden: [128, 64]
+  p_drop: 0.15
+  use_layernorm: false # ⬅️ BatchNorm1d 사용
+
+# ❗️ num_classes: 3 (제거됨)
+
+# =========================================
+# ⚙️ Training Configs
+# =========================================
+teacher_train:
+  epochs: 300
+  batch_size: 128
+  lr: 0.0005
+  weight_decay: 0.0001
+  val_split: 0.20
+  early_stop_patience: 20
+  ckpt_dir: "checkpoints"
+
+student_train:
+  epochs: 300
+  batch_size: 128
+  lr: 0.0005
+  weight_decay: 0.0001
+  val_split: 0.20
+  early_stop_patience: 20
+  ckpt_dir: "checkpoints"
+  alpha: 0.85
+
+# ... (Loss Weights, KD 설정은 동일) ...
+
+loss_weights:
+  align: 0
+  norm_balance: 0
+  var_balance: 0
+  z_l2: 0.0005
+
+student_kd:
+  beta_z: 0
+  temperature: 2.0 # (회귀에서는 사용 안 되지만, 있어도 무방)
