@@ -1,43 +1,22 @@
-# ─────────────────────────────────────────────────────────
-# Core
-numpy==1.26.4
-pandas==2.2.3
-scikit-learn==1.4.2
-scipy==1.11.4
-tqdm==4.66.5
-pyyaml==6.0.2
-python-dotenv==1.0.1
-requests==2.32.3
-httpx==0.27.2
-
-# 파일/포맷
-openpyxl==3.1.5
-pyarrow==17.0.0
-
-# Explainability & Visualization
-matplotlib==3.8.4
-seaborn==0.13.2
-plotly==5.24.1
-
-# Dimensionality Reduction & Clustering
-umap-learn==0.5.6
-
-# FastAPI stack (서버)
+# FastAPI stack
 fastapi==0.115.5
 uvicorn[standard]==0.30.6
 pydantic==2.9.2
 pydantic-core==2.23.4
 python-multipart==0.0.12
+python-dotenv==1.0.1
 
-# Schedulers / Jobs
-APScheduler==3.10.4
+# Utility
+requests==2.32.3
+httpx==0.27.2
+pillow==10.4.0
+pyyaml==6.0.2
 
 # Cloud/DB/SDKs
 pymongo==4.8.0
 firebase-admin==6.6.0
 openai>=1.51.0
-pillow==10.4.0
 
-# PyTorch (로컬/기본 설치용)
+# PyTorch CPU (inference only)
 torch==2.4.0+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
