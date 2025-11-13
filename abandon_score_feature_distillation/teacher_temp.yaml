@@ -1,0 +1,79 @@
+paths:
+  base_dir: "."
+  data_dir: "data"
+  label_dir: "data/label"
+  ckpt_dir: "checkpoints"
+  eval_dir: "eval_results"
+
+filenames:
+  A_name: "A.csv"
+  B_name: "B.csv"
+  Y_name: "Y_binary.csv"
+
+# =========================================
+# 🧠 Task
+# =========================================
+task:
+  type: "classification"
+  dim_y: 1
+  num_classes: 2
+
+# =========================================
+# 🏛 Teacher (🔥 85.15% Best Params 적용)
+# =========================================
+# (이 파라미터로 'teacher.pt'를 생성할 것)
+teacher_model:
+  # 👈 [수정] 85.15% 모델의 파라미터
+  z_dim_A: 32
+  z_dim_B: 32
+  encA_hidden: [128]
+  encB_hidden: [128]
+  clf_hidden: [128]
+  p_drop: 0.16494909395570506
+  use_layernorm: true
+
+teacher_train:
+  # 👈 [수정] 85.15% 모델의 파라미터
+  lr: 0.0003259033235845223
+  weight_decay: 0.0005933719468975663
+  ckpt_name: "teacher.pt"
+
+# =========================================
+# 🎓 Student (❗️ 튜닝 대기)
+# =========================================
+student_model:
+  # (Teacher의 새 구조를 따름)
+  z_dim: 32 # ⬅️ Teacher z_dim_A와 일치
+  enc_hidden: [128] # ⬅️ Teacher encA_hidden과 일치
+
+  # ❗️ [초기화] Teacher가 바뀌었으므로 재튜닝 필요
+  clf_hidden: [128, 64] # (튜닝 전 기본값 예시)
+  p_drop: 0.2
+  use_layernorm: false
+
+# =========================================
+# ⚙ Training
+# =========================================
+common_train:
+  seed: 42
+  device: "auto"
+  epochs: 300
+  batch_size: 128
+  val_split: 0.20
+  early_stop_patience: 30
+
+student_train:
+  # ❗️ [초기화] 새 Teacher의 학습률을 따라가는 것을 권장
+  lr: 0.0003259033235845223
+  weight_decay: 0.0005933719468975663
+  ckpt_name: "student.pt"
+
+# =========================================
+# 🔥 Knowledge Distillation (❗️ 튜닝 대기)
+# =========================================
+student_kd:
+  # ❗️ [초기화] Teacher가 바뀌었으므로 재튜닝 필요
+  alpha: 0.5
+  temperature: 3.0
+  beta_z: 0.1
+  gamma_feat: 0.1 # (튜닝 전 기본값 예시)

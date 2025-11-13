@@ -1,0 +1,76 @@
+paths:
+  base_dir: "."
+  data_dir: "data"
+  label_dir: "data/label"
+  ckpt_dir: "checkpoints"
+  eval_dir: "eval_results"
+
+filenames:
+  A_name: "A.csv"
+  B_name: "B.csv"
+  Y_name: "Y_binary.csv"
+
+# =========================================
+# 🧠 Task
+# =========================================
+task:
+  type: "classification"
+  dim_y: 1
+  num_classes: 2
+
+# =========================================
+# 🏛 Teacher (Baseline: 80.2%)
+# =========================================
+# (Feature KD와 호환되는 0.8020점짜리 teacher.pt 고정)
+teacher_model:
+  z_dim_A: 32
+  z_dim_B: 32
+  encA_hidden: [128]
+  encB_hidden: [128]
+  clf_hidden: [128]
+  p_drop: 0.23822
+  use_layernorm: false
+
+teacher_train:
+  lr: 0.0001514
+  weight_decay: 0.000323
+  ckpt_name: "teacher.pt"
+
+# =========================================
+# 🎓 Student (🔥 71.28% Best Params 적용)
+# =========================================
+student_model:
+  z_dim: 32 # ⬅️ Teacher z_dim_A와 일치 (OK)
+  enc_hidden: [128] # ⬅️ Teacher encA_hidden과 일치 (OK)
+
+  # 👈 [수정] 71.28% 모델의 파라미터
+  clf_hidden: [256, 128]
+  p_drop: 0.07601375608760333
+  use_layernorm: true
+
+# =========================================
+# ⚙ Training
+# =========================================
+common_train:
+  seed: 42
+  device: "auto"
+  epochs: 300
+  batch_size: 128
+  val_split: 0.20
+  early_stop_patience: 30
+
+student_train:
+  # (Student의 lr/wd는 튜닝하지 않았으므로 Teacher의 값을 따름)
+  lr: 0.0001514
+  weight_decay: 0.000323
+  ckpt_name: "student.pt"
+
+# =========================================
+# 🔥 Knowledge Distillation (🔥 71.28% Best)
+# =========================================
+student_kd:
+  # 👈 [수정] 71.28% 모델의 파라미터
+  alpha: 0.43834072460881335
+  temperature: 2.543932446595963
+  beta_z: 1.7804014171207143
+  gamma_feat: 2.7759031192591346
