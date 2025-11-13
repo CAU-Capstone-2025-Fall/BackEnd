@@ -1,0 +1,453 @@
+[33mcommit 49c9fcfef3919980426ec05de446f691ad31af0f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Merge: 5b462bd e19da32
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Nov 13 18:32:06 2025 +0900
+
+    Merge branch 'main' of https://github.com/CAU-Capstone-2025-Fall/BackEnd
+
+[33mcommit 5b462bd7e0f772c80a04ce49f43669b4c1d86367[m[33m ([m[1;32mtemp[m[33m)[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Nov 13 18:30:55 2025 +0900
+
+    score estimation model added
+
+[33mcommit 32bd2f65de14ea152619b0dbd026d6500b932f2b[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Nov 6 23:06:44 2025 +0900
+
+    t
+
+[33mcommit e19da3244d8a9fcb275d059030920d5a3ecec427[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Thu Nov 6 22:26:05 2025 +0900
+
+    user_info에 가공된 설문 데이터 반환 api 추가
+
+[33mcommit 40859adc6dd266e0f1c25f389b1139c595a26c64[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Thu Nov 6 22:06:14 2025 +0900
+
+    설문 api 오류수정
+
+[33mcommit c4e93fba4bb1faa96790b7a65774e4712d6658a3[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Thu Nov 6 22:00:48 2025 +0900
+
+    추천 시스템에 따라 설문조사 항목 변경
+
+[33mcommit 3f01d89295bd7365b275b3128cdbe6ef8c79f6de[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Nov 6 20:35:04 2025 +0900
+
+    r
+
+[33mcommit d39af426498c56b037c647ea0336cb80791daafd[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Nov 6 20:33:49 2025 +0900
+
+    ae
+
+[33mcommit 789153d026518f7ce09243e2ae377751124c0e51[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Thu Nov 6 17:02:31 2025 +0900
+
+    나이, 품종 기반 가산점 수정
+
+[33mcommit b7e5a342fbceee0a85a8e671d2984bf69d0210d9[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Fri Oct 31 01:50:00 2025 +0900
+
+    나이 기반 필터링 오류수정2
+
+[33mcommit 85dffad19a05bbc709f683664aa31e16846e1efa[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Fri Oct 31 00:42:13 2025 +0900
+
+    나이 기반 필터링 오류수정
+
+[33mcommit 23e9b68a3b2301b855dcfa5b0071d0f4e1aa3ae2[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Thu Oct 30 22:22:57 2025 +0900
+
+    나이 기반 필터링 추가
+    ex) 2025(60일 미만)(년생) => 0
+    2025(년생) => 1
+    2024(년생) => 2
+    시작,끝 구간 모두 포함해서 필터링
+
+[33mcommit 18bf3133c2170edf22486844b072db817403b08f[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Oct 9 00:16:54 2025 +0900
+
+    DB
+
+[33mcommit 8daf18443bc8aa310942819c492e786608794d72[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Wed Oct 8 23:57:14 2025 +0900
+
+    changed user data into DB
+
+[33mcommit d403d78dc2dff6141f30d9b75c5223818d64dffe[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Wed Oct 8 22:01:05 2025 +0900
+
+    RAG requirements fixed
+
+[33mcommit f18e3c9caae985dcd50bc70885f57004238549b5[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Wed Oct 8 21:46:51 2025 +0900
+
+    requirements updated
+
+[33mcommit 1296f1898d39696697f62744f318d460f6c347eb[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Wed Oct 8 21:41:43 2025 +0900
+
+    chatbot RAG added
+
+[33mcommit 14c276347517b273a5ab40d1c7e4f75029d8ed89[m
+Author: Sung0816 <101621948+Sung0816@users.noreply.github.com>
+Date:   Wed Oct 8 21:28:24 2025 +0900
+
+    Update main.py
+    
+    임시수정
+
+[33mcommit 7eaa30f679f7d4e5fc0ceffb341b4b4a8b8c0233[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Wed Oct 8 20:06:48 2025 +0900
+
+    user_info api 명세 추가
+
+[33mcommit 9fb05e4dcd5641f7ca71cc169b20fec946776ca2[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Tue Oct 7 21:39:07 2025 +0900
+
+    userinfo api 수정
+
+[33mcommit b2a34e408a51123b08bc9f77c5a455249a5d4283[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Tue Oct 7 21:35:54 2025 +0900
+
+    설문 결과를 survey_data 폴더에 userId.txt 파일로 저장
+
+[33mcommit 32d7c0f2d4c23558d580b6b5247b21f3ca284711[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Tue Oct 7 00:52:30 2025 +0900
+
+    rearranged
+
+[33mcommit 5403f142cf7bb682a3636120c14e2f896926be01[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Tue Oct 7 00:14:34 2025 +0900
+
+    deleted dummy files
+
+[33mcommit 09fc526d5c1c51fc50f13845d7a0774935251814[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Tue Oct 7 00:12:11 2025 +0900
+
+    fetch_created images
+
+[33mcommit f93dd8f8bf8f73f30e1ef4ae0dbbccf9eba95806[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Tue Oct 7 00:10:11 2025 +0900
+
+    t7
+
+[33mcommit ed30a21415454cad91a783bb003ca88daef050e6[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Tue Oct 7 00:00:02 2025 +0900
+
+    t6
+
+[33mcommit 3247db4f11805a4bf9fa2b2df647f8b8e4f021be[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Oct 6 23:56:50 2025 +0900
+
+    t5
+
+[33mcommit 2108068112b8f557a8dfba29480e1c91797c71d5[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Oct 6 23:54:20 2025 +0900
+
+    t4
+
+[33mcommit ce94df10ddd13d522435fb3f9ef06cccc6d33af4[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Oct 6 23:48:07 2025 +0900
+
+    t3
+
+[33mcommit f594b853ad2a6ab13d9ec61222d22763aee9f601[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Oct 6 23:38:47 2025 +0900
+
+    t2
+
+[33mcommit 7f53a1a1653691581181d60ca79aae1f16d9eb0c[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Oct 6 23:32:38 2025 +0900
+
+    update api
+
+[33mcommit c22693ca2a9cebfe7c08a24275cf5b5b0a39fc92[m
+Author: sungyeonji <sungyeonji9342@gmail.com>
+Date:   Mon Oct 6 18:32:07 2025 +0900
+
+    api태그, md파일 docs로, favorite api추가
+
+[33mcommit 3e46138c86daa84bc422fc3e11acd127b59ffc31[m
+Author: sungyeonji <sungyeonji9342@gmail.com>
+Date:   Mon Oct 6 03:54:52 2025 +0900
+
+    read 수정
+
+[33mcommit f831a47e18f91d8be8b1c3a67a60376865d97b7d[m
+Author: sungyeonji <sungyeonji9342@gmail.com>
+Date:   Mon Oct 6 03:48:27 2025 +0900
+
+    로그인 관련 기능을 위하여 세션에서 사용자명 뽑는 함수 추가
+
+[33mcommit 1b0d631365b4d987592dbbb1b22c162f10396c9b[m
+Merge: 4c6adcb f4eaf0f
+Author: sungyeonji <sungyeonji9342@gmail.com>
+Date:   Mon Oct 6 03:26:26 2025 +0900
+
+    Merge branch 'extractFeature'
+
+[33mcommit f4eaf0fc64287c322f909b37a32b2ff6f76ad8df[m[33m ([m[1;31morigin/extractFeature[m[33m)[m
+Author: sungyeonji <sungyeonji9342@gmail.com>
+Date:   Mon Oct 6 03:25:14 2025 +0900
+
+    md약간수정
+
+[33mcommit faf5f631e94e4cfacf27f03b94791354a2e84fba[m
+Author: sungyeonji <sungyeonji9342@gmail.com>
+Date:   Mon Oct 6 02:53:57 2025 +0900
+
+    리뷰 작성을 위한 api 작성
+
+[33mcommit 4c6adcba620f9b3276f9d074316772aed368796a[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Mon Oct 6 02:51:54 2025 +0900
+
+    api 오류 수정
+
+[33mcommit b2ff1d7ca78b0162fad3c63222152e2810b8b87b[m
+Merge: 57671ff 9ec6388
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Mon Oct 6 01:14:28 2025 +0900
+
+    Merge branch 'main' of https://github.com/CAU-Capstone-2025-Fall/BackEnd
+
+[33mcommit 57671ff091f4ce033caf6d3c7525c22be14235f0[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Mon Oct 6 01:10:47 2025 +0900
+
+    우선순위 적용 read api 추가
+
+[33mcommit b93da613ed743ed7b2f52646bcf14041df2a21f3[m
+Author: sungyeonji <sungyeonji9342@gmail.com>
+Date:   Sun Oct 5 23:03:31 2025 +0900
+
+    Create하면 자동으로 extractedFeature을 같이 생성하도록 하려다가, 딱히 그런식으로 추가되는 내용이 없을 것이라 생각. 후에 자동 데이터 갱신(auto_fetch) 코드를 사용한다면 여기에 추가하면 될 거같음
+
+[33mcommit 9ec6388c76b56bea7b6694796310cb85471fdb0c[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Sun Oct 5 21:51:31 2025 +0900
+
+    create image api added
+
+[33mcommit f407481dc1436e2c39c5ef44d418dc70f3647e0d[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Fri Oct 3 22:10:56 2025 +0900
+
+    main fixed
+
+[33mcommit 290df87d411d766f1fc0f89da5aa912474d575f9[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Fri Oct 3 22:07:48 2025 +0900
+
+    requirements fixed
+
+[33mcommit 7a6b01d2432b37ffbdcb67c9987f8c796d7a4aa9[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Fri Oct 3 22:05:48 2025 +0900
+
+    fixed
+
+[33mcommit 52e6e3a1b31e14fa5ef7d2f0ed7878d93f88f388[m
+Merge: b7ac0dc de78700
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Fri Oct 3 21:58:04 2025 +0900
+
+    Merge branch 'main' of https://github.com/CAU-Capstone-2025-Fall/BackEnd
+
+[33mcommit b7ac0dcc5787cb5a9aafa35f0ebd04ea231121bb[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Fri Oct 3 21:54:05 2025 +0900
+
+    auto_fetch 비활성화, db 항목 간소화, api에 개선여부/중성화 여부 추가
+
+[33mcommit de787008d7fc35af5129076097a713bfd983e65c[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Fri Oct 3 20:52:48 2025 +0900
+
+    test2
+
+[33mcommit 5e704b5a177bf133cd7b4172bb1aa1b44e1854ad[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Fri Oct 3 20:48:18 2025 +0900
+
+    test
+
+[33mcommit 0f9a022a98f2f47a39797248cb36316873d9001c[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Wed Oct 1 14:04:10 2025 +0900
+
+    image edit API
+
+[33mcommit 022a27c5bf06f7d61ec97e0f26d9a5e90aef3dcb[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 29 01:47:25 2025 +0900
+
+    chatbot api added
+
+[33mcommit c0381d750337fdde0dca7e466434e3fd6cc0d984[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 29 00:39:28 2025 +0900
+
+    login with json type
+
+[33mcommit dc173c8fee58fee979c98ad6914c77de6f9a8d5b[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 29 00:37:04 2025 +0900
+
+    requirements updated
+
+[33mcommit 08d06839ad64458dcb5ae5c17ea3b2e25f7ed4ca[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 29 00:30:24 2025 +0900
+
+    login API added
+
+[33mcommit d2eeb964eb4265aa59641751709080f842dbc4b8[m
+Merge: b5d7d6e 370fcce
+Author: MINSEOK YOON <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 29 00:19:29 2025 +0900
+
+    Merge pull request #2 from CAU-Capstone-2025-Fall/openai-api
+    
+    db created_img column, 이미지 생성 기능, 간단한 parsing 기능
+
+[33mcommit 370fcce11ee99b25c8e9172359ecb5e3201763b4[m[33m ([m[1;31morigin/openai-api[m[33m, [m[1;32mopenai-api[m[33m)[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Thu Sep 25 00:01:12 2025 +0900
+
+    db created_img column, 이미지 생성 기능, 간단한 parsing 기능
+
+[33mcommit b5d7d6e16959d750bcbfe0b0e28fb2d034bd7751[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Sep 18 03:10:32 2025 +0900
+
+    main py rollback;
+
+[33mcommit 9e838f422033870e58754c820360946991c28ef9[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Sep 18 03:08:30 2025 +0900
+
+    f
+
+[33mcommit 12f37831f7d50ae1f5eac05162ad8808dee5ba66[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Sep 18 03:07:38 2025 +0900
+
+    dep
+
+[33mcommit 6a20a60981798366e8e792c0a6bbe6a4d4436acd[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Sep 18 03:00:11 2025 +0900
+
+    db off 2
+
+[33mcommit a4e2d8e18a91c950355766e18771402326f46e34[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Sep 18 02:58:20 2025 +0900
+
+    db off test
+
+[33mcommit 3f492d1e6a990d2b750378348ff770de1a5e99ba[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Sep 18 02:32:50 2025 +0900
+
+    bug fix t 1
+
+[33mcommit c3b3a12cd73faaeb3ce934d37b009dd673c879b9[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Sep 18 01:49:29 2025 +0900
+
+    delpy.yml updated
+
+[33mcommit e8689307123c304708e2fb6ffd21fc6858a2cb7f[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Thu Sep 18 01:39:11 2025 +0900
+
+    open ai service added
+
+[33mcommit 1a59616c47e71af6afc61b5df71b2a1f8b430139[m
+Merge: 7f1425e 4f06069
+Author: MINSEOK YOON <106676599+Mansook@users.noreply.github.com>
+Date:   Wed Sep 17 23:54:06 2025 +0900
+
+    Merge pull request #1 from CAU-Capstone-2025-Fall/db-api
+    
+    DB crud api 구현 및 자동 업데이트
+
+[33mcommit 4f06069a718c48eb72e413b3b3b1b88ed0a506e4[m[33m ([m[1;31morigin/db-api[m[33m)[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Wed Sep 17 21:40:13 2025 +0900
+
+    test_main -> main
+
+[33mcommit d74e4d2cbd397fa83836f37e2167b379e9e73159[m
+Author: dlawogud000 <jh020826@gmail.com>
+Date:   Wed Sep 17 20:53:57 2025 +0900
+
+    db/abandoned_animal db API & 갱신
+
+[33mcommit 7f1425ee638cf581ae2acdc6caa603fa1fdb2832[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 15 00:34:37 2025 +0900
+
+    test
+
+[33mcommit 762597d3326e77610253c05ce154fd64b291335d[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 15 00:31:53 2025 +0900
+
+    github Action CICD Test
+
+[33mcommit eb3e78a6e911dcd127ae6d95a5fc1b878ff0a713[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 15 00:30:49 2025 +0900
+
+    a
+
+[33mcommit c7a9091efa34989f979ca28051d65d3eceb32a35[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 15 00:28:56 2025 +0900
+
+    github action v2
+
+[33mcommit caef46620001b2a449b4b4f074ae7a518e5d7d90[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Mon Sep 15 00:23:51 2025 +0900
+
+    github action activated
+
+[33mcommit 658f49994fed9e4f1b4440c21a9d543ad50665b3[m
+Author: Mansook <106676599+Mansook@users.noreply.github.com>
+Date:   Sun Sep 14 22:19:38 2025 +0900
+
+    backend setup

@@ -40,4 +40,5 @@ openai>=1.51.0
 pillow==10.4.0
 
 # PyTorch (로컬/기본 설치용)
-torch==2.4.0
+torch==2.4.0+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
