@@ -81,36 +81,31 @@ def get_priority_score(animal):
     score = 0
     today = datetime.today().date()
 
-    # #공고 종료일에 따른 가산점 <- 공고기간은 입양 동물과는 무관
-    # notice_edt = datetime.strptime(animal["noticeEdt"], "%Y%m%d")
-    # until_end = (notice_edt.date() - today).days
-    # if until_end < 7:
-    #     score += 50
-
     #입소 기간에 따른 가산점
     happen_dt = datetime.strptime(animal["happenDt"], "%Y%m%d")
     days = (today - happen_dt.date()).days
     days = days - 14 # 공고 기간 가산점 제외
     # 입소 기간이 길수록 가산점 증가
     if days >= 30:
-        score += days
+        score += 1
     if days >= 60:
-        score += days
+        score += 2
     if days > 90:
         score += days
     # 입소 후 3개월 이상인 경우 최대 200점 한도
-    score += min(score, 200)
+    # score += min(score, 200)
 
     #중성화 여부에 따른 가산점
-    if animal.get("neuterYn") == "Y":
-        score += 20
+    if animal.get("neuterYn") == "N":
+        score += 0.5
     
     # 건강 상태에 따른 가산점
+    health_list = ["불량", "감염", "병", "장애", "실명", "결손", "오염"]
     health = animal.get("specialMark", "").lower()
-    if "불량" in health or "감염" in health or "병" in health:
-        score += 50
-    elif "양호" in health or "건강" in health:
-        score += 20
+    if any(word in health for word in health_list):
+        score += 2
+    # elif "양호" in health or "건강" in health:
+    #     score += 20
 
     # 나이에 따른 가산점 : 나이가 많을수록 가산점
     age_str = animal.get("age")
@@ -118,18 +113,18 @@ def get_priority_score(animal):
     if day: # 1년 미만
         score += 0
     elif year:
-        if datetime.today().year - year > 3:
-            score += 30
+        if datetime.today().year - year > 7:
+            score += 2
         elif datetime.today().year - year > 5:
-            score += 50
+            score += 1
 
     # 사진 개선 여부에 따른 가산점 <- 개선 사진 효과 증대 목적
     if animal.get("improve") == "1":
-        score += 50
+        score += 0.5
 
     # 품종에 따른 가산점 : 비 품종견, 비 품종묘이면 가산점
     if animal.get("kindNm") in ["믹스견", "한국 고양이"]:
-        score += 30
+        score += 1
 
     # 지역에 따른 가산점 추가 가능
     address = animal.get("careAddr", "")
@@ -149,9 +144,20 @@ def get_priority_score(animal):
     #             score += 10
 
     # 추출된 특징에 따른 가산점 추가 가능
-    # feature = animal.get("extractedFeature", "")
-    # if "user_feature" in feature:
-    #     score += 30
+    feature = animal.get("extractedFeature", "")
+    for key in feature:
+        if key == "rough_size":
+            if any(word in feature[key] for word in ["큼", "큰 편", "대형"]):
+                score += 1
+            elif any(word in feature[key] for word in ["중간", "중형"]):
+                score += 0.5
+        if key == "main_color":
+            if any(word in feature[key] for word in ["검은", "검정", "진한", "회색"]):
+                score += 1
+            elif any(word in feature[key] for word in ["흰", "밝은", "연한", "베이지"]):
+                score += 0
+            else: 
+                score += 0.5
 
     return score
 

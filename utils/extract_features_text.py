@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from PIL import Image
 from openai import OpenAI
+import json
+import re
 
 # -------------------- 환경 --------------------
 load_dotenv()
@@ -31,23 +33,30 @@ SLEEP_BETWEEN  = 0.8
 
 # -------------------- 프롬프트 --------------------
 TEXT_PROMPT = (
-    "아래 동물 사진을 보고, 겉모습의 특징을 한국어 한 문단(250~450자)으로 정리해줘.\n"
-    "불릿, 줄바꿈 없이 문장형 서술만 작성하고, 추측은 ‘추정’, ‘가능성’ 같은 표현으로 완곡하게 써.\n"
-    "포함: 1) 털 색/무늬, 2) 대략적 체구(작음/중간/큼), 3) 모질(길이/결감), "
-    "4) 눈/귀/체형 등 눈에 띄는 특징, 5) 사진만으로 가능한 건강 인상(‘추정’, ‘가능성’ 등 보수적 표현).\n"
-    "주의:\n"
-    "- 일시적인 먼지, 진흙, 물기, 빗물 자국 등 **씻거나 닦으면 사라질 수 있는 외부 오염**은 건강 인상에서 제외한다.\n"
-    "- 털의 색상·무늬는 **자연적인 패턴이나 명확히 관찰 가능한 특징만** 기술한다.\n"
-    "- 품종, 나이, 질병은 단정 금지. 보이는 사실 위주로 서술하고 과장하지 않는다."
+    "아래 동물 사진을 보고, 겉모습의 특징을 한국어로 JSON 형태로 추출해줘.\n"
+    "JSON에는 반드시 아래의 n개 항목이 포함되어야 해:\n"
+    "1. main_color: '가장 두드러지는 털 색'\n"
+    "2. sub_color: '두 번째로 두드러지는 털 색'\n"
+    "3. fur_pattern: '털 무늬(자연적인 패턴이나 명확하게 보이는 특징만 기술)'\n"
+    "4. fur_length: '털 길이(짧음/중간/김 중 하나)'\n"
+    "5. fur_texture: '털 질감(부드러움/뻣뻣함 등)'\n"
+    "6. rough_size: '대략적인 체구(작음/중간/큼 중 하나)'\n"
+    "7. eye_shape: '눈 모양, 형태, 크기등의 특징'\n"
+    "8. ear_shape: '귀 모양, 형태, 크기등의 특징'\n"
+    "9. tail_shape: '꼬리 모양, 형태, 크기등의 특징'\n"
+    "10. noticeable_features: '눈/귀/꼬리/체형 외에 명확한 기타 외형적 특징' \n"
+    "11. health_impression: '사진상 가능한 건강에 대한 인상. 먼지, 진흙, 물기, 빗물 자국 등의 외부 요인은 제외' \n"
+    "각 항목의 값은 한두 문장으로 서술하되, 문장 끝에 마침표를 붙여줘.\n"
+    "모든 항목은 자연적이고 명확하게 보이는 특징만 기술하고, 추측이나 단정은 하지 마. 추정이 필요한 경우 ‘추정’, ‘가능성’ 등의 표현을 사용해.\n"
+    """예시: {\"main_color\": \"흰 색.\", \"sub_color\": \"검은 색.\", \"fur_pattern\": \"검은 반점.\", \"fur_length\": \"짧음.\", \"fur_texture\": \"부드러움.\",
+      \"rough_size\": \"중간 크기로 추정됨.\", \"eye_shape\": \"갈색 둥근 눈.\", \"ear_shape\": \"뾰족한 귀.\", \"tail_shape\": \"긴 꼬리.\", 
+      \"noticeable_features\": null, \"health_impression\": \"겉보기에는 건강해 보이나, 자세한 상태는 알 수 없음.\"}"""
 )
 
-# -------------------- 유틸 --------------------
 def try_https(u: str) -> str:
-    """http:// → https:// 자동 변환"""
     return ("https://" + u[len("http://"):]) if u.startswith("http://") else u
 
 def fetch_to_data_url(url: str) -> str:
-    """popfile1 URL을 다운로드 → 리사이즈 → base64 data URL로 변환"""
     u = try_https(url)
     headers = {"User-Agent": UA, "Referer": url}
     r = requests.get(u, headers=headers, timeout=12, stream=True, allow_redirects=True)
@@ -72,11 +81,9 @@ def fetch_to_data_url(url: str) -> str:
     return f"data:{ctype};base64,{b64}"
 
 def one_paragraph(text: str) -> str:
-    """여러 줄 텍스트를 한 문단으로 변환"""
     return " ".join(line.strip() for line in (text or "").splitlines()).strip()
 
 def build_input_for_image(data_url: str):
-    """OpenAI Responses API 입력 형식 구성"""
     return [{
         "role": "user",
         "content": [
@@ -85,16 +92,79 @@ def build_input_for_image(data_url: str):
         ],
     }]
 
-def call_vision_text(data_url: str) -> str:
-    """OpenAI Vision 호출"""
+def extract_json_like(text: str):
+    # 1. 코드블록 형태 ```json ... ``` 또는 ``` ... ```
+    m = re.search(r"```(?:json)?\s*({[\s\S]*?})\s*```", text, re.MULTILINE)
+    if m:
+        return m.group(1)
+
+    # 2. 그냥 중괄호로 시작하는 가장 큰 JSON을 탐색 (중괄호 pair 최대 매칭)
+    # 최초 { ... } 형태
+    m = re.search(r"({[\s\S]*})", text)
+    if m:
+        return m.group(1)
+
+    return None
+
+def sanitize_json_string(json_str: str):
+    """
+    json.loads에서 흔히 실패하는 문제상황을 보정(큰따옴표/작은따옴표, trailing commas 등)
+    단, 완벽하지는 않음(정규화 실패시 raw_string 저장)
+    """
+    # 작은따옴표 -> 큰따옴표로 변경 (단, 값에 ' 가 있을 순 있음, 완벽X)
+    json_str = re.sub(r"'", r'"', json_str)
+    # 마지막 쉼표 제거: {"a": 1, } 이런 형태
+    json_str = re.sub(r",(\s*[\}\]])", r"\1", json_str)
+    return json_str
+
+def call_vision_json(data_url: str) -> dict:
+    """OpenAI Vision 호출 후 JSON 파싱 강화"""
     resp = client_ai.responses.create(
         model=MODEL,
         input=build_input_for_image(data_url),
     )
-    return one_paragraph(resp.output_text)
+    output = one_paragraph(resp.output_text)
+
+    json_like = extract_json_like(output)
+    if json_like:
+        json_like = sanitize_json_string(json_like)
+        try:
+            result = json.loads(json_like)
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            pass
+
+    # 혹시 그냥 전체가 잘 구성된 JSON일수도
+    try:
+        result = json.loads(output)
+        if isinstance(result, dict):
+            return result
+    except Exception:
+        pass
+
+    return {"parse_error": output}
+
+def try_parse_existing_feature(val) -> dict:
+    """기존 추출된 특징 문자열을 json(dict)으로 변환"""
+    if isinstance(val, dict):
+        return val
+    if not isinstance(val, str) or not val.strip():
+        return {}
+    try:
+        result = json.loads(val)
+        if isinstance(result, dict):
+            return result
+    except Exception:
+        pass
+    return {"raw_string": val}
 
 def is_empty_extracted_feature(doc: dict) -> bool:
     ef = doc.get("extractedFeature")
+    if isinstance(ef, dict):
+        if all(v is None or (isinstance(v, str) and not v.strip()) for v in ef.values()):
+            return True
+        return False
     return (ef is None) or (isinstance(ef, str) and ef.strip() == "")
 
 # -------------------- 메인 --------------------
@@ -108,10 +178,22 @@ if __name__ == "__main__":
     processed = 0
     skipped = 0
     failed = 0
+    overwritten = 0
+
+    # collection.update_many({}, {"$unset": {"extractedFeature": ""}})
 
     for doc in collection.find():
         try:
+            ef_orig = doc.get("extractedFeature")
+
             if not is_empty_extracted_feature(doc):
+                ef_json = try_parse_existing_feature(ef_orig)
+                if not (isinstance(ef_orig, dict) and len(ef_orig) > 0):
+                    collection.update_one(
+                        {"_id": doc["_id"]},
+                        {"$set": {"extractedFeature": ef_json}}
+                    )
+                    overwritten += 1
                 skipped += 1
                 continue
 
@@ -119,7 +201,9 @@ if __name__ == "__main__":
             if not img_url or not isinstance(img_url, str) or not img_url.strip():
                 collection.update_one(
                     {"_id": doc["_id"]},
-                    {"$set": {"extractedFeature": "이미지 없음(분석 생략)."}}
+                    {"$set": {"extractedFeature": {
+                        "error": "이미지 없음(분석 생략)."
+                    }}}
                 )
                 skipped += 1
                 continue
@@ -129,40 +213,45 @@ if __name__ == "__main__":
             except Exception as e:
                 collection.update_one(
                     {"_id": doc["_id"]},
-                    {"$set": {"extractedFeature": f"이미지 다운로드 실패: {str(e)[:150]}"}}
-                )
+                    {"$set": {"extractedFeature": {
+                        "error": f"이미지 다운로드 실패: {str(e)[:150]}"
+                    }}
+                })
                 failed += 1
                 continue
 
             try:
-                summary = call_vision_text(data_url)
+                summary_json = call_vision_json(data_url)
             except Exception as e:
                 collection.update_one(
                     {"_id": doc["_id"]},
-                    {"$set": {"extractedFeature": f"분석 오류: {type(e).__name__}: {str(e)[:150]}"}}
-                )
+                    {"$set": {"extractedFeature": {
+                        "error": f"분석 오류: {type(e).__name__}: {str(e)[:150]}"
+                    }}
+                })
                 failed += 1
                 continue
 
-            if not summary:
-                summary = "분석 결과가 비어 있습니다."
+            if not summary_json or not isinstance(summary_json, dict):
+                summary_json = {"error": "분석 결과가 비어 있습니다."}
 
             collection.update_one(
                 {"_id": doc["_id"]},
-                {"$set": {"extractedFeature": summary}}
+                {"$set": {"extractedFeature": summary_json}}
             )
             processed += 1
             print(f"[OK] {doc.get('desertionNo')} 저장 완료")
 
-            # 잠시 쉬기(레이트리밋 완화)
             time.sleep(SLEEP_BETWEEN)
 
         except Exception as e:
             collection.update_one(
                 {"_id": doc["_id"]},
-                {"$set": {"extractedFeature": f"처리 오류: {type(e).__name__}: {str(e)[:150]}"}}
-            )
+                {"$set": {"extractedFeature": {
+                    "error": f"처리 오류: {type(e).__name__}: {str(e)[:150]}"
+                }}
+            })
             failed += 1
             continue
 
-    print(f"완료: 처리 {processed}, 건너뜀 {skipped}, 실패 {failed}")
+    print(f"완료: 처리 {processed}, 건너뜀 {skipped}, 기존 문자열 덮어씀 {overwritten}, 실패 {failed}")
