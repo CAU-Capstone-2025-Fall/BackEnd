@@ -1,4 +1,5 @@
 # routers/encode.py
+import asyncio
 import os
 import traceback
 from datetime import datetime
@@ -10,18 +11,20 @@ from pydantic import BaseModel
 from pymongo import MongoClient
 from routers.inference import infer_lime, infer_student
 from utils.gpt_summary_utils import generate_recommendations_text, generate_summary_text
+from utils.interaction_utils import compute_interaction_sets
 
 load_dotenv()
 
 router = APIRouter(prefix="/encode", tags=["Encode"])
 
 # --------------------------------------------------------
-# MongoDB 연결
+# MongoDB
 # --------------------------------------------------------
 MONGO_URI = os.getenv("MONGODB_URI")
 client = MongoClient(MONGO_URI)
 db = client[os.getenv("REPORT_DB", "pet_rec")]
 collection = db["reports"]
+
 
 # --------------------------------------------------------
 # 저장 스키마
@@ -35,11 +38,12 @@ class ReportData(BaseModel):
     logits: list | None = None
     probability: float | None = None
     percentile: int | None = None
+    interaction: list | None = None
     timestamp: str | None = None
 
 
 # --------------------------------------------------------
-# 영어→한글 매핑
+# 영어→한글
 # --------------------------------------------------------
 FIELD_MAP = {
     "age": "연령",
@@ -67,26 +71,31 @@ FIELD_MAP = {
 def convert_to_korean_keys(A: dict) -> dict:
     converted = {}
     for eng, val in A.items():
-        if eng not in FIELD_MAP:
-            continue
-
-        key = FIELD_MAP[eng]
-
-        # 값 숫자로 변환
-        if isinstance(val, str):
+        if eng in FIELD_MAP:
+            key = FIELD_MAP[eng]
             try:
                 val = float(val)
             except:
                 pass
-
-        converted[key] = val
-
+            converted[key] = val
     return converted
 
 
 # --------------------------------------------------------
-# Report 저장 함수
+# Interaction Feature Groups
 # --------------------------------------------------------
+FEATURE_GROUPS = {
+    "연령": ["연령"],
+    "가족": ["가족 구성원 수"],
+    "주택규모": ["주택규모"],
+    "소득": ["월평균 가구소득"],
+
+    "성별": ["성별_1", "성별_2"],
+    "주택형태": ["주택형태_1","주택형태_2","주택형태_3","주택형태_4"],
+    "직업": ["화이트칼라","블루칼라","자영업","비경제활동층","기타"],
+}
+
+
 async def save_report(user_id: str, report: ReportData):
     collection.update_one(
         {"userId": user_id},
@@ -124,41 +133,53 @@ async def encodeA_and_save(user_id: str, features: dict):
     # ------------------------------------
     try:
         lime = infer_lime(pd.DataFrame([result["input_scaled"]]))
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
-        raise HTTPException(500, f"infer_lime 실패: {e}")
+        raise HTTPException(500, "infer_lime 실패")
 
     top5 = sorted(lime.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
 
+
     # ------------------------------------
-    # 3) summary 생성용 clean input
+    # 3) Interaction 계산 (GPT보다 먼저)
+    # ------------------------------------
+    def f_local(d):
+        return infer_student(d)["probability"]
+
+    try:
+        interaction_top3 = compute_interaction_sets(
+            result["input_raw"],
+            f_local,
+            FEATURE_GROUPS,
+            top_k=3
+        )
+    except Exception:
+        traceback.print_exc()
+        interaction_top3 = None
+
+    print("INTERACTIONS:", interaction_top3)
+
+
+    # ------------------------------------
+    # 4) GPT 요약/추천 (interaction 포함)
     # ------------------------------------
     clean_input = {
-        k: v
-        for k, v in result["input_raw"].items()
+        k: v for k, v in result["input_raw"].items()
         if not (str(v) == "0" or v == 0)
     }
 
-    # ------------------------------------
-    # 4) GPT 요약 생성
-    # ------------------------------------
     try:
-        summary = await generate_summary_text(prob, top5, clean_input)
-    except Exception as e:
+        summary_task = generate_summary_text(prob, top5, interaction_top3, clean_input)
+        rec_task = generate_recommendations_text(prob, top5, interaction_top3, clean_input)
+        summary, recommendations = await asyncio.gather(summary_task, rec_task)
+    except Exception:
         traceback.print_exc()
         summary = None
-
-    # ------------------------------------
-    # 5) GPT 행동 추천 생성
-    # ------------------------------------
-    try:
-        recommendations = await generate_recommendations_text(prob, top5, clean_input)
-    except Exception as e:
-        traceback.print_exc()
         recommendations = None
 
+
     # ------------------------------------
-    # 6) ReportData 생성
+    # 5) ReportData 구성
     # ------------------------------------
     report = ReportData(
         raw_input=result["input_raw"],
@@ -169,12 +190,10 @@ async def encodeA_and_save(user_id: str, features: dict):
         lime=lime,
         summary=summary,
         recommendations=recommendations,
-        timestamp=datetime.utcnow().isoformat()
+        interaction=interaction_top3,
+        timestamp=datetime.utcnow().isoformat(),
     )
 
-    # ------------------------------------
-    # 7) DB 저장
-    # ------------------------------------
     await save_report(user_id, report)
 
     return {

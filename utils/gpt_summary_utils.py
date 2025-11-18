@@ -32,31 +32,30 @@ HUMAN_MAP = {
 }
 
 # -------------------------------------------------------
-# 2) Summary 생성 함수
+# 2) Summary 생성 함수 (interaction 포함)
 # -------------------------------------------------------
-async def generate_summary_text(prob, lime_top5, raw):
-    """
-    prob: float (0~1)
-    lime_top5: list of (featName, weight)
-    raw: dict (한글 key: value)
-    """
+async def generate_summary_text(prob, lime_top5, interaction_top3, raw):
 
-    # 1) raw_input에서 value=1 인 것만 "선택된 속성" 리스트로
     selected_human = []
     for key, val in raw.items():
         if val in [1, "1"]:
-            name = HUMAN_MAP.get(key, key)
-            selected_human.append(name)
+            selected_human.append(HUMAN_MAP.get(key, key))
 
-    # 2) LIME 영향 목록 → 사람이 읽을 수 있게 변환
-    lime_human = []
-    for feat, w in lime_top5:
-        nm = HUMAN_MAP.get(feat, feat)
-        lime_human.append(f"{nm}: {w:.4f}")
+    lime_human = [
+        f"{HUMAN_MAP.get(feat, feat)}: {w:.4f}"
+        for feat, w in lime_top5
+    ]
 
-    # 3) 프롬프트 구성
+    if interaction_top3:
+        inter_human = [
+            f"{' × '.join(groups)}: {score:.4f}" 
+            for groups, score in interaction_top3
+        ]
+    else:
+        inter_human = ["(상호작용 없음)"]
+
     prompt = f"""
-다음 정보를 바탕으로 '반려동물 유기 위험도 분석 요약'을 자연스럽고 정확하게 작성해줘.
+다음 데이터를 기반으로 '반려동물 유기 위험도 분석 요약'을 작성해줘.
 
 [유기 충동 확률]
 {prob * 100:.1f}%
@@ -64,18 +63,26 @@ async def generate_summary_text(prob, lime_top5, raw):
 [LIME 영향 요인 Top 5]
 {chr(10).join(lime_human)}
 
-[선택된 입력 정보]
-- {chr(10).join(selected_human) if selected_human else "선택된 특성이 없음"}
+[상호작용 영향 요인 Top 3]
+{chr(10).join(inter_human)}
 
-조건:
-- 확률이 30% 미만이면 "낮은 편", 30~60%면 "보통 수준", 60% 이상이면 "높은 편"이라고 판단.
-- LIME에서 weight가 양수면 위험 증가 요인, 음수면 위험 감소 요인으로 해석.
-- 성별/직업/주택형태 등은 raw_input 값이 1인 경우만 언급.
-- 사실과 반대되는 문장은 절대 쓰지 말 것.
-- 지나치게 길게 말하지 말고 1~2 문장으로 간결하게.
+[사용자 선택 정보]
+- {chr(10).join(selected_human) if selected_human else "특이 선택 정보 없음"}
 
-출력: 하나의 자연스러운 문단
-    """
+요구사항:
+- 반드시 **두 개의 단락**으로 나누어 작성할 것.
+- 첫 단락: LIME 기반 개별 요인 중심 요약.
+- 두 번째 단락: 상호작용(pairwise) 조합이 어떤 방향에 기여했는지 요약.
+- 두 단락 사이에 반드시 빈 줄 1개 삽입.
+- 각 단락은 1문장 또는 2문장.
+- 숫자는 직접 나열하지 말고 자연어로 의미만 해석.
+- 확률 기준:
+    - 30% 미만: 낮음
+    - 30~60%: 보통
+    - 60% 이상: 높음
+
+출력: 두 개의 단락으로 구성된 자연스러운 요약문
+"""
 
     resp = await client.responses.create(
         model="gpt-5-nano",
@@ -86,10 +93,10 @@ async def generate_summary_text(prob, lime_top5, raw):
 
     return resp.output_text
 
-
-
-
-async def generate_recommendations_text(prob, lime_top5, raw):
+# -------------------------------------------------------
+# 3) 행동 추천 생성 함수 (interaction 포함)
+# -------------------------------------------------------
+async def generate_recommendations_text(prob, lime_top5, interaction_top3, raw):
     prompt = f"""
 다음 데이터를 기반으로 반려동물 유기 위험도를 낮추기 위한 
 구체적이고 실천 가능한 행동 가이드 3개를 생성해줘.
@@ -97,8 +104,11 @@ async def generate_recommendations_text(prob, lime_top5, raw):
 [유기 위험도]
 {prob*100:.1f}%
 
-[영향 요인 Top 5]
+[LIME 영향 요인 Top 5]
 {lime_top5}
+
+[상호작용 영향 Top 3]
+{interaction_top3}
 
 [사용자 입력 정보]
 {raw}
