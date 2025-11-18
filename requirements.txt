@@ -16,7 +16,7 @@ lime==0.2.0.1
 pymongo==4.8.0
 firebase-admin==6.6.0
 openai>=1.51.0
-
+pandas==2.2.3
 # PyTorch CPU (inference only)
 torch==2.4.0+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
