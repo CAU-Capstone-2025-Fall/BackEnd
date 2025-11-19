@@ -12,6 +12,7 @@ from routers import (
     chat,
     encode,
     favorite,
+    gptgenerator,
     img_edit,
     items,
     login,
@@ -51,6 +52,7 @@ app.include_router(recommand.router)
 app.include_router(encode.router)   
 app.include_router(report.router)  # ← 여기서 encodeA 엔드포인트가 활성화됨
 app.include_router(user_info.router)
+app.include_router(gptgenerator.router)
 # ------------------------------
 # 루트 엔드포인트
 # ------------------------------
