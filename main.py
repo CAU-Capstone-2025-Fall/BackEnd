@@ -17,7 +17,7 @@ from routers import (
     items,
     login,
     parse,
-    recommand,
+    recommend,
     report,
     reviews_crud,
     user_info,
@@ -48,7 +48,7 @@ app.include_router(parse.router)
 app.include_router(login.router)
 app.include_router(reviews_crud.router)
 app.include_router(favorite.router)
-app.include_router(recommand.router)
+app.include_router(recommend.router)
 app.include_router(encode.router)   
 app.include_router(report.router)  # ← 여기서 encodeA 엔드포인트가 활성화됨
 app.include_router(user_info.router)
