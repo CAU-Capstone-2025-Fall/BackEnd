@@ -307,7 +307,7 @@ def recommend_hybrid(body: HybridRequest):
     generic = is_generic_query(q)
     # 쿼리/설문 유사도 결합 비율
     alpha = 0.3 if generic else 0.7  # generic일수록 설문 비중 증가
-    w_sim, w_comp, w_prio, w_loc = (0.35, 0.55, 0.1, 0.1) if generic else (0.6, 0.3, 0.1, 0.1)
+    w_sim, w_comp, w_prio, w_loc = (0.2, 0.7, 0.1, 0.1) if generic else (0.7, 0.2, 0.1, 0.1)
 
     # 2) 후보 생성
     species_list = extract_species(q)
