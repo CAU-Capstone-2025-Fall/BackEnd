@@ -8,7 +8,8 @@ from pymongo import MongoClient
 
 load_dotenv()
 
-ADMIN_USERS=["dbsalstjr", "123123123"]
+ADMIN_USERS = os.getenv("ADMIN_USERS", "")
+ADMIN_USERS = [u.strip() for u in ADMIN_USERS.split(",") if u.strip()]
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

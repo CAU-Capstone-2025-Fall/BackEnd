@@ -12,6 +12,8 @@ from routers.login import get_current_username  # ← 로그인 의존성
 
 load_dotenv()
 
+ADMIN_USERS = os.getenv("ADMIN_USERS", "")
+ADMIN_USERS = [u.strip() for u in ADMIN_USERS.split(",") if u.strip()]
 router = APIRouter(tags=["review"])
 
 # MongoDB 연결
@@ -98,7 +100,7 @@ def update_review(
     if not doc:
         raise HTTPException(404, "존재하지 않는 글")
 
-    if doc.get("authorId") != username:
+    if username not in ADMIN_USERS and oc.get("authorId") != username:
         raise HTTPException(403, "작성자만 수정 가능")
 
     update_fields = {}
@@ -134,7 +136,7 @@ def delete_review(rid: str, username: str = Depends(get_current_username)):
     if not doc:
         raise HTTPException(404, "존재하지 않는 글")
 
-    if doc.get("authorId") != username:
+    if username not in ADMIN_USERS and doc.get("authorId") != username:
         raise HTTPException(403, "작성자만 삭제 가능")
 
     reviews_col.delete_one({"_id": doc["_id"]})
