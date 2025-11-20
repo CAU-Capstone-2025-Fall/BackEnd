@@ -41,14 +41,16 @@ def extract_species(natural_query: str):
     species_map = {
         "개": ["개", "강아지", "dog", "멍멍이"],
         "고양이": ["고양이", "냥이", "cat"],
-        "기타": ["기타", "토끼", "햄스터", "기니피그", "고슴도치", "거북이", "새"]  # 필요에 따라 확장
+        "기타": ["기타", "토끼", "햄스터", "기니피그", "고슴도치", "거북이", "새", "파충류"]  # 필요에 따라 확장
     }
-    q = natural_query.lower()
+    q = (natural_query or "").lower()
+    found = set()
     for key, keywords in species_map.items():
         for word in keywords:
             if word in q:
-                return key
-    return None
+                found.add(key)
+                break
+    return sorted(found)
 
 def parse_size(text: str) -> str:
     t = (text or "").lower()
@@ -259,12 +261,15 @@ def recommend_animals(body: RecommendRequest):
         raise HTTPException(500, f"임베딩 생성 오류: {e}")
 
     # 2. 모든 동물 문서 순회, (extractedFeature 등으로 임베딩)
-    species = extract_species(body.natural_query)
-    db_species_field = "upKindNm"
+    species_list = extract_species(body.natural_query)
+    query_filter: Dict[str, Any] = {}
+    if species_list:
+        # 다중 종 필터 적용
+        if len(species_list) == 1:
+            query_filter = {"upKindNm": species_list[0]}
+        else:
+            query_filter = {"upKindNm": {"$in": species_list}}
     candidates = []
-    query_filter = {}
-    if species:
-        query_filter = {db_species_field: species}
     for doc in collection.find(query_filter):
         animal_emb = np.array(doc.get("embedding", []))
         score = cosine_similarity(user_emb, animal_emb)
@@ -305,8 +310,16 @@ def recommend_hybrid(body: HybridRequest):
     w_sim, w_comp, w_prio, w_loc = (0.35, 0.55, 0.1, 0.1) if generic else (0.6, 0.3, 0.1, 0.1)
 
     # 2) 후보 생성
+    species_list = extract_species(q)
+    base_filter: Dict[str, Any] = {}
+    if species_list:
+        if len(species_list) == 1:
+            base_filter["upKindNm"] = species_list[0]
+        else:
+            base_filter["upKindNm"] = {"$in": species_list}
+    
     candidates: List[Tuple[float, Dict[str,Any]]] = []
-    for doc in collection.find({}):
+    for doc in collection.find(base_filter):
         a_emb = np.array(doc.get("embedding") or [], dtype=np.float32)
         if a_emb.size == 0: continue
 
