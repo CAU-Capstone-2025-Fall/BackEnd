@@ -1,22 +1,58 @@
-# FastAPI stack
+#############################
+# FastAPI / Server
+#############################
 fastapi==0.115.5
 uvicorn[standard]==0.30.6
+
+#############################
+# Data Models & Request Parsing
+#############################
 pydantic==2.9.2
 pydantic-core==2.23.4
 python-multipart==0.0.12
 python-dotenv==1.0.1
 
-# Utility
+#############################
+# Utility / HTTP
+#############################
 requests==2.32.3
 httpx==0.27.2
 pillow==10.4.0
 pyyaml==6.0.2
+
+#############################
+# AI / ML
+#############################
 lime==0.2.0.1
-# Cloud/DB/SDKs
-pymongo==4.8.0
-firebase-admin==6.6.0
-openai>=1.51.0
-pandas==2.2.3
-# PyTorch CPU (inference only)
 torch==2.4.0+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
+
+#############################
+# Database
+#############################
+pymongo==4.8.0
+
+#############################
+# Cloud SDKs
+#############################
+firebase-admin==6.6.0          # ✔ Firebase Admin SDK
+google-cloud-storage==2.17.0   # ✔ Firebase Storage 업로드할 때 필요
+google-auth==2.34.0            # ✔ 인증 충돌 방지
+google-auth-oauthlib==1.2.1
+google-api-core==2.19.1
+
+#############################
+# OpenAI
+#############################
+openai>=1.51.0
+
+#############################
+# Data Analysis
+#############################
+pandas==2.2.3
+numpy==1.26.4        # pandas 안정 버전과 호환 최고 안정
+
+#############################
+# Logging / Debug
+#############################
+loguru==0.7.2
