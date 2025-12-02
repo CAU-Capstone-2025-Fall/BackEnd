@@ -2,109 +2,173 @@
 
 import base64
 import os
+import uuid
 from io import BytesIO
 
+import firebase_admin
 import requests
-from fastapi import APIRouter, File, HTTPException, UploadFile
-from PIL import Image
+from dotenv import load_dotenv
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from firebase_admin import credentials, storage
+from pymongo import MongoClient
 
+# ========================================
+# FastAPI 라우터
+# ========================================
 router = APIRouter(prefix="/gpt-image", tags=["GPTImage"])
 
+load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+MONGO_URI = os.getenv("MONGODB_URI")
+
+# ========================================
+# MongoDB 연결
+# ========================================
+mongo = MongoClient(MONGO_URI)
+db = mongo["testdb"]
+animals_col = db["abandoned_animals"]
+
+print("🔥 MongoDB 연결: testdb.abandoned_animals")
 
 
-def load_and_resize_image(img_bytes: bytes, size=(1024, 1024)):
-    print("[DEBUG] load_and_resize_image: received image bytes =", len(img_bytes))
+# ========================================
+# Firebase 초기화
+# ========================================
+if not firebase_admin._apps:
+    cred = credentials.Certificate("firebase-key.json")
+    firebase_admin.initialize_app(cred, {
+        "storageBucket": "capstone-366a6.firebasestorage.app"
+    })
 
+bucket = storage.bucket()
+
+
+# ========================================
+# Firebase 업로드 함수
+# ========================================
+def upload_to_firebase(base64_img: str, filename_prefix: str) -> str:
     try:
-        image = Image.open(BytesIO(img_bytes)).convert("RGB")
+        img_bytes = base64.b64decode(base64_img)
+        filename = f"{filename_prefix}_{uuid.uuid4().hex}.png"
+        blob = bucket.blob(filename)
+
+        blob.upload_from_string(img_bytes, content_type="image/png")
+        blob.make_public()
+
+        print(f"📤 Firebase 업로드 성공 → {blob.public_url}")
+        return blob.public_url
+
     except Exception as e:
-        print("[ERROR] PIL cannot open image:", e)
-        raise
-
-    print("[DEBUG] Original size:", image.size)
-    image = image.resize(size, Image.LANCZOS)
-    print("[DEBUG] Resized size:", image.size)
-
-    buf = BytesIO()
-    image.save(buf, format="PNG")
-    buf.seek(0)
-    return buf
+        print("❌ Firebase 업로드 실패:", e)
+        return None
 
 
+# ========================================
+# GPT 프롬프트
+# ========================================
+GPT_PROMPT = (
+    "Please clean this animal while strictly preserving its real-world appearance. "
+    "Remove only visible dirt, stains, mud, dust, and foreign particles from the fur. "
+    "Do NOT modify: "
+    "- the natural fur color, shade, tone, or brightness "
+    "- the lighting, exposure, white balance, or color temperature "
+    "- the contrast, saturation, vibrance, or overall color grade "
+    "- the facial structure, body shape, eye color, or any breed-specific traits "
+    "- shadows, highlights, or natural lighting direction in the scene "
+    "The cleaned fur must retain the exact same original color and darkness. "
+    "Do NOT brighten the image, do NOT whiten the fur, and do NOT smooth excessive texture. "
+    "Avoid all aesthetic enhancement, glamorization, upscaling effects, or style changes. "
+    "Keep all medical conditions, scars, markings, and unique physical features clearly visible and unchanged. "
+    "Do not replace the animal, do not redraw the face, and do not create new details. "
+    "Enhance overall clarity only in a subtle way, without altering the color or tone of any region. "
+    "Preserve the original background, perspective, depth, and environment exactly as captured. "
+    "The final image should look like the same photo—just naturally cleaner, not edited."
+)
+
+
+# ========================================
+# GPT 이미지 생성
+# ========================================
+def generate_clean_image(img_bytes: bytes) -> str:
+    url = "https://api.openai.com/v1/images/edits"
+
+    files = {
+        "image": ("input.png", img_bytes, "image/png"),
+    }
+
+    data = {
+        "model": "gpt-image-1",
+        "prompt": GPT_PROMPT,
+        "size": "1024x1024",
+        "n": 1,
+        "input_fidelity": "high",
+        "quality": "high",
+    }
+
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+
+    resp = requests.post(url, headers=headers, files=files, data=data)
+
+    if resp.status_code != 200:
+        print("🔥 GPT ERROR:", resp.text)
+        raise Exception(resp.text)
+
+    return resp.json()["data"][0]["b64_json"]
 @router.post("/clean")
-async def clean_image(file: UploadFile = File(...)):
-    print("\n======================")
-    print("[API CALL] /gpt-image/clean")
-    print("======================")
-
-    if not file:
-        raise HTTPException(status_code=400, detail="이미지 파일이 필요합니다.")
-
-    FIXED_PROMPT = (
-        "Please gently clean this animal while preserving its real-world appearance. "
-        "Remove only visible dirt, stains, and foreign matter from the fur — without altering "
-        "the natural fur color, texture, facial structure, body shape, or any breed-specific features. "
-        "Keep medical conditions or unique physical traits (such as skin marks or scars) clearly visible and untouched. "
-        "Do not generate a new animal or change the expression. "
-        "Maintain the current setting and background as is, only enhancing overall image clarity, sharpness, and lighting "
-        "to better reflect the original scene. "
-        "Keep all colors and tones realistic, natural, and consistent with real-life lighting — "
-        "no artificial or exaggerated color grading. "
-        "The final image should look like an unedited high-quality photo of the same animal in the same environment."
-    )
-
+async def clean_image(
+    desertionNo: str = Form(...)
+):
+    """
+    desertionNo 만 입력하면
+    DB에서 popfile1 자동으로 읽어서 처리
+    """
     try:
-        raw_bytes = await file.read()
-        print("[DEBUG] Uploaded file:", file.filename)
-        print("[DEBUG] Raw bytes =", len(raw_bytes))
+        print(f"\n🔔 /gpt-image/clean 호출 → desertionNo={desertionNo}")
 
-        resized_buf = load_and_resize_image(raw_bytes)
+        # 1. DB 존재 확인
+        animal = animals_col.find_one({"desertionNo": desertionNo})
+        if not animal:
+            raise HTTPException(404, f"동물({desertionNo})을 DB에서 찾을 수 없음")
 
-        # ============================================
-        # 🔥 REST API로 /v1/images/edits 직접 호출
-        # ============================================
-        url = "https://api.openai.com/v1/images/edits"
+        # 2. popfile1 가져오기
+        img_url = animal.get("popfile1")
+        if not img_url:
+            raise HTTPException(400, f"동물 {desertionNo} 의 popfile1 이 존재하지 않음")
 
-        files = {
-            "image": ("input.png", resized_buf, "image/png"),   # 반드시 이렇게 해야 함
-        }
+        print(f"🌐 popfile1 이미지 URL: {img_url}")
 
-        data = {
-            "model": "gpt-image-1",
-            "prompt": FIXED_PROMPT,
-            "size": "1024x1024",
-            "n": 1,
-            "input_fidelity": "high",
-            "quality": "high",
-        }
+        # 3. URL에서 이미지 다운로드
+        resp = requests.get(img_url)
+        if resp.status_code != 200:
+            raise HTTPException(400, f"이미지 다운로드 실패: {img_url}")
 
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}"
-        }
+        img_bytes = resp.content
+        print(f"📥 이미지 다운로드 성공: {len(img_bytes)} bytes")
 
-        print("[DEBUG] Sending POST to /v1/images/edits...")
-        response = requests.post(url, headers=headers, files=files, data=data)
+        # 4. GPT 이미지 생성
+        print("🎨 GPT 이미지 생성 중…")
+        b64_img = generate_clean_image(img_bytes)
 
-        print("[DEBUG] Response status:", response.status_code)
+        # 5. Firebase 업로드
+        fb_url = upload_to_firebase(b64_img, desertionNo)
+        if not fb_url:
+            raise HTTPException(500, "Firebase 업로드 실패")
 
-        if response.status_code != 200:
-            print("[RAW ERROR]", response.text)
-            raise Exception(response.text)
+        # 6. DB 업데이트
+        animals_col.update_one(
+            {"desertionNo": desertionNo},
+            {"$set": {"createdImg": fb_url, "improve": "1"}}
+        )
 
-        resp_json = response.json()
-        print("[RAW RESPONSE]", resp_json)
-
-        b64 = resp_json["data"][0]["b64_json"]
+        print("✅ DB 업데이트 완료")
 
         return {
             "success": True,
-            "image_base64": b64,
-            "prompt_used": FIXED_PROMPT
+            "desertionNo": desertionNo,
+            "createdImg": fb_url,
+            "message": "popfile1 기반 이미지 클린 완료"
         }
 
     except Exception as e:
-        print("\n[EXCEPTION] =======================")
-        print(e)
-        print("===================================\n")
+        print("❌ ERROR:", e)
         raise HTTPException(status_code=500, detail=str(e))
