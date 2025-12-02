@@ -393,4 +393,7 @@ for doc in collection.find():
 
 collection.delete_many({ "noticeNo": { "$nin": remains }}) 
 
+# result = collection.delete_many({"extractedFeature": None})
+# print(f"삭제된 문서 수: {result.deleted_count}")
+
 

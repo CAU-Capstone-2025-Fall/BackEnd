@@ -54,8 +54,8 @@ def extract_species(natural_query: str):
 
 def parse_size(text: str) -> str:
     t = (text or "").lower()
-    if any(k in t for k in ["대형","큼","큰 편","large"]): return "대형"
-    if any(k in t for k in ["중간","중형","medium"]):       return "중형"
+    if any(k in t for k in ["대형","큼","큰","large"]): return "대형"
+    if any(k in t for k in ["중간","중형","중","medium"]):       return "중형"
     if any(k in t for k in ["소형","작","small"]):          return "소형"
     return "알수없음"
 
@@ -66,6 +66,51 @@ def days_since(noticeSdt: Optional[str]) -> int:
         return (datetime.now() - dt).days
     except Exception:
         return 0
+
+def _age_in_years(age_field: Optional[str]) -> Optional[float]:
+    if not age_field:
+        return None
+    s = str(age_field)
+    # "2025(년생)" -> birth year
+    m = re.search(r"(\d{4})", s)
+    if m:
+        try:
+            birth = int(m.group(1))
+            return max(0.0, datetime.now().year - birth)
+        except Exception:
+            pass
+    # "2살" or "3" 등
+    m2 = re.search(r"(\d+(\.\d+)?)", s)
+    if m2:
+        try:
+            return float(m2.group(1))
+        except Exception:
+            pass
+    return None
+
+def _text_has_keywords(text: Optional[str], keywords: list) -> bool:
+    if not text:
+        return False
+    t = text.lower()
+    for k in keywords:
+        if k.lower() in t:
+            return True
+    return False
+
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+def _map_activity_level(level: str) -> float:
+    return {"매우 활발함": 0.9, "보통": 0.6, "주로 실내 생활": 0.3}.get(level, 0.6)
+
+def _map_care_time(cat: str) -> float:
+    # numeric scale roughly matching previous mapping
+    return {"10분 이하": 0.2, "30분": 0.4, "1시간": 0.6, "2시간 이상": 0.9}.get(cat, 0.5)
+
+def _daily_home_time_adjustment(daily: str) -> float:
+    # if user is home more, they can handle more active / higher care requirement pets
+    if not daily: return 0.0
+    return {"0~4시간": -0.15, "4~8시간": 0.0, "8~12시간": 0.10, "12시간 이상": 0.15}.get(daily, 0.0)
     
 # 우선순위 기반 노출 알고리즘을 추천에도 약간의 가중치로 적용
 def priority_boost(doc: Dict[str, Any]) -> float:
@@ -142,20 +187,6 @@ def survey_constraints(ans: Dict[str, Any], doc: Dict[str, Any]) -> bool:
         aa = (ans.get("allergyAnimal") or "").lower()
         if "고양" in aa and doc.get("upKindNm") == "고양이": return False
         if ("강아지" in aa or "개" in aa) and doc.get("upKindNm") == "개": return False
-    # 선택적 선호 종 강제 <- 설문에서 선택한 종 이외도 추천받고 싶을 수 있으므로 제외
-    # fav = ans.get("favoriteAnimals") or []
-    # if fav:
-    #     want_dog = any(("강아지" in x) or ("개" in x) for x in fav)
-    #     want_cat = any("고양" in x for x in fav)
-    #     if doc.get("upKindNm") == "개" and not want_dog: return False
-    #     if doc.get("upKindNm") == "고양이" and not want_cat: return False
-    # 주거/평수 vs 대형 <- 너무 엄격할 수 있어 제외
-    # pref_size = ans.get("preferredSize") or ""
-    # a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
-    # small_house = ans.get("houseSize") in ["10평 미만", "10평 ~ 20평"]
-    # apt = ans.get("residenceType") == "아파트"
-    # if pref_size == "소형" and a_size == "대형": return False
-    # if (small_house or apt) and a_size == "대형": return False
     return True
 
 def size_match(pref: str, a_size: str) -> float:
@@ -165,11 +196,149 @@ def size_match(pref: str, a_size: str) -> float:
         return 0.5
     return 0.0
 
-def effort_hint(a_size: str) -> Tuple[float,float]:
-    if a_size == "대형": return (0.9, 0.8) # 활동, 케어
-    if a_size == "중형": return (0.6, 0.5)
-    if a_size == "소형": return (0.4, 0.3)
-    return (0.5, 0.5)
+def infer_activity_and_care(doc: Dict[str, Any]) -> Tuple[float, float]:
+    # --- Defaults / baselines ---
+    base_activity = 0.50  # neutral baseline
+    grooming_base = 0.45  # neutral grooming need
+    medical_need = 0.0
+
+    # --- Breed / kind baseline heuristics (small set for quick biasing) ---
+    kind = (doc.get("upKindNm") or doc.get("kindFullNm") or "").lower()
+    if "리트리버" in kind or "보더콜리" in kind or "허스키" in kind:
+        base_activity = 0.80
+    elif "불독" in kind or "불도그" in kind or "퍼그" in kind:
+        base_activity = 0.35
+    elif "고양이" in kind or "한국 고양이" in kind or "고양" in kind:
+        base_activity = 0.50
+
+    # --- Size / weight based adjustments ---
+    a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
+    rsize = a_size.lower()
+    if "대형" in rsize or "큰" in rsize:
+        base_activity += 0.05
+    if "소형" in rsize or "작" in rsize:
+        base_activity -= 0.05
+
+    # --- Age based adjustments ---
+    age_yrs = _age_in_years(doc.get("age") or "")
+    if age_yrs is not None:
+        if age_yrs <= 2.0:
+            base_activity += 0.10   # younger => more active
+        elif age_yrs >= 7.0:
+            base_activity -= 0.20   # older => less active
+
+    # --- Behavior / health textual signals (specialMark, health_impression, noticeable_features) ---
+    text_fields = " ".join([
+        (doc.get("specialMark") or ""),
+        (doc.get("extractedFeature") or {}).get("health_impression", "") or "",
+        (doc.get("extractedFeature") or {}).get("noticeable_features", "") or ""
+    ]).lower()
+
+    # positive activity indicators
+    if _text_has_keywords(text_fields, ["활발", "사교", "사람 좋아", "장난", "에너지", "놀이"]):
+        base_activity += 0.12
+
+    # negative activity indicators
+    if _text_has_keywords(text_fields, ["낯가림", "겁", "경계", "소심", "예민", "조심"]):
+        base_activity -= 0.08
+
+    # health-related indicators increase care need and reduce activity
+    if _text_has_keywords(text_fields, ["병", "감염", "상처", "치료", "질환", "장애", "실명", "결손", "아픈", "염증"]):
+        medical_need = max(medical_need, 0.7)
+        base_activity -= 0.25
+
+    # neuter effect: sterilized animals sometimes calmer
+    neuter = (doc.get("neuterYn") or "").upper()
+    if neuter == "Y":
+        base_activity -= 0.05
+
+    # --- Fur / grooming heuristics from extractedFeature ---
+    fur_len = ((doc.get("extractedFeature") or {}).get("fur_length") or "").lower()
+    fur_texture = ((doc.get("extractedFeature") or {}).get("fur_texture") or "").lower()
+
+    if "긴" in fur_len or "장모" in fur_len:
+        grooming_base = 0.9
+    elif "짧" in fur_len:
+        grooming_base = 0.2
+    elif "중간" in fur_len:
+        grooming_base = 0.5
+    else:
+        grooming_base = 0.45
+
+    if _text_has_keywords(fur_texture, ["엉킴", "매트", "거친", "얽힘"]):
+        grooming_base = min(1.0, grooming_base + 0.15)
+
+    # skin / coat health issues bump grooming/medical need
+    if _text_has_keywords(text_fields, ["피부", "털빠짐", "비듬", "기생충", "염증"]):
+        grooming_base = min(1.0, grooming_base + 0.25)
+        medical_need = max(medical_need, 0.6)
+
+    # --- Compose care_score ---
+    # care_score mixes grooming need and medical need; grooming weighted slightly more
+    care_score = 0.6 * grooming_base + 0.4 * medical_need
+    care_score = _clamp01(care_score)
+
+    # --- Compose activity_score ---
+    activity_score = _clamp01(base_activity)
+
+    # Round to 3 decimals for neatness
+    activity_score = round(activity_score, 3)
+    care_score = round(care_score, 3)
+
+    return (activity_score, care_score)
+
+def compute_desired_activity_and_care(ans: Dict[str, Any]) -> Tuple[float, float]:
+    if not ans:
+        # defaults if no survey
+        return 0.6, 0.5
+
+    # base from explicit activityLevel field (primary signal)
+    desired_activity = _map_activity_level(ans.get("activityLevel", ""))  # 0..1
+
+    # dailyHomeTime increases possible activity tolerance
+    daily = ans.get("dailyHomeTime", "")
+    adj = _daily_home_time_adjustment(daily)
+    if adj != 0.0:
+        desired_activity = max(0.0, min(1.0, desired_activity + adj))
+
+    # 가족(구성원) 수: 더 많은 가족은 활동적인 반려동물 허용 가능성 소폭 증가
+    try:
+        fc = int(ans.get("familyCount", 0))
+        if fc >= 3:
+            desired_activity = min(1.0, desired_activity + 0.05)
+    except Exception:
+        pass
+
+    # 어린이나 노인이 있는 경우: 상대적으로 차분한 동물 선호 가능성 -> 활동성 조정
+    if ans.get("hasChildOrElder") == "있음":
+        desired_activity = max(0.0, desired_activity - 0.10)
+
+    # 기존에 반려동물을 키워본 경험이 있다면 활동/케어 감내력 증가
+    ph = ans.get("petHistory", "") or ""
+    if ph and ("현재" in ph or "과거" in ph):
+        desired_activity = min(1.0, desired_activity + 0.05)
+
+    # 원하는 케어 시간: 기본 numeric target (from explicit careTime)
+    desired_care = _map_care_time(ans.get("careTime", ""))
+    # 예산/시간 여유가 많으면 더 많은 케어 허용 가능
+    budget = ans.get("budget", "")
+    if budget:
+        # high budget category increases tolerance to higher care requirement
+        if "700만원" in budget or "600만원" in budget or "500만원" in budget:
+            desired_care = min(1.0, desired_care + 0.05)
+
+    # preferredSize가 '상관없음'이 아니면 약간 영향
+    if ans.get("preferredSize") and ans.get("preferredSize") != "":
+        # 선호 크기가 클수록 케어 허용도가 약간 올라갈 수 있음 (단, 집 크기 고려는 별도)
+        if ans.get("preferredSize") == "대형":
+            desired_activity = min(1.0, desired_activity + 0.03)
+
+    # clamp
+    desired_activity = round(_clamp01(desired_activity), 3)
+    desired_care = round(_clamp01(desired_care), 3)
+
+    return desired_activity, desired_care
+
 
 def compat_score(ans: Dict[str, Any], doc: Dict[str, Any]) -> float:
     if not ans: return 0.0
@@ -181,9 +350,10 @@ def compat_score(ans: Dict[str, Any], doc: Dict[str, Any]) -> float:
     score += w * size_match(ans.get("preferredSize",""), a_size); wsum += w
 
     # 활동/케어 적합
-    desired_active = {"매우 활발함":0.9,"보통":0.6,"주로 실내 생활":0.3}.get(ans.get("activityLevel"),0.6)
-    care_time = {"10분 이하":0.2,"30분":0.4,"1시간":0.6,"2시간 이상":0.9}.get(ans.get("careTime"),0.5)
-    a_act, a_care = effort_hint(a_size)
+    desired_active, care_time = compute_desired_activity_and_care(ans)
+    a_act, a_care = infer_activity_and_care(doc)
+    if doc.get("specialMark") and "활발" in doc.get("specialMark"):
+        a_act = max(a_act, 0.8)
     w = 0.25
     act_match = 1 - min(1.0, abs(desired_active - a_act))
     care_match = 1 - min(1.0, abs(care_time - a_care))
@@ -207,7 +377,7 @@ def compat_score(ans: Dict[str, Any], doc: Dict[str, Any]) -> float:
         "차분": ["차분", "조용", "온순", "침착", "순함", "순", "평온", "차분함"],
         "활발": ["활발", "에너지", "신남", "뛰", "활기", "명랑", "발랄"],
         "독립": ["독립", "자립", "혼자 잘", "스스로", "독립적"],
-        "애교": ["애교", "교감", "스킨십", "사람 좋아", "친밀", "붙임성", "친화"],
+        "애교": ["애교", "교감", "스킨십", "사람 좋아", "친밀", "붙임성", "친화", "귀여운"],
         "예민": ["예민", "민감", "신경질", "경계", "조심스러움", "날카로움"],
     }
 
@@ -241,6 +411,141 @@ def compat_score(ans: Dict[str, Any], doc: Dict[str, Any]) -> float:
     wsum += w
 
     return max(0.0, min(1.0, score / (wsum or 1)))
+
+def find_personality_matches(pref_pers: List[str], doc: Dict[str, Any]) -> List[str]:
+    persona_text = " ".join([doc.get("specialMark","") or "", (doc.get("extractedFeature") or {}).get("noticeable_features","") or ""]).lower()
+    TEMPERAMENT_MAP = {
+        "차분": ["차분", "조용", "온순", "침착", "순함", "평온"],
+        "활발": ["활발", "에너지", "활동", "발랄", "명랑"],
+        "독립": ["독립", "자립", "혼자 잘"],
+        "애교": ["애교", "교감", "사람 좋아", "붙임성", "친화", "귀여운"],
+        "예민": ["예민", "민감", "경계"],
+    }
+    hits = []
+    for pref in (pref_pers or []):
+        if pref in TEMPERAMENT_MAP:
+            if any(k in persona_text for k in TEMPERAMENT_MAP[pref]):
+                hits.append(pref)
+    return hits
+
+def find_query_keywords(q: str) -> List[str]:
+    if not q: return []
+    ql = q.lower()
+    kws = []
+    # 단순 키워드 목록 (필요시 확장)
+    KEYWORDS = ["대형","중형","소형","활발","활동","차분","애교","귀여운","아기",
+                "검은색","검정","흰색","하얀","갈색","회색","치즈","베이지","크림",
+                "점박이","얼룩","짧은 털","긴 털",]
+    for k in KEYWORDS:
+        if k.lower() in ql:
+            kws.append(k)
+    return kws
+
+def build_reasons(survey: Dict[str, Any], q: str, meta: Dict[str, float], doc: Dict[str, Any]) -> List[Dict[str, Any]]:
+    reasons = []
+    # 2) 임베딩 유사도
+    sim = meta.get("sim", 0.0)
+    if sim > 0.53:
+        reasons.append({
+            "type": "embedding",
+            "label": f"쿼리/프로필 임베딩 유사도 높음 (sim={round(sim,3)})",
+            "score": float(sim),
+            "evidence": "",
+            "reason": "전반적 유사도 높음"
+        })
+
+    # 3) 크기 매칭
+    pref_size = survey.get("preferredSize") if survey else ""
+    a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
+    s_size = size_match(pref_size or "", a_size)
+    if s_size >= 0.8:
+        reasons.append({
+            "type": "size",
+            "label": f"선호 크기와 일치: {a_size}",
+            "score": float(s_size),
+            "evidence": a_size,
+            "reason": a_size
+        })
+
+    # 4) 성격 매칭(설문 -> doc.specialMark / noticeable_features)
+    pref_pers = (survey.get("preferredPersonality") or []) if survey else []
+    pers_hits = find_personality_matches(pref_pers, doc)
+    if pers_hits:
+        reasons.append({
+            "type": "personality",
+            "label": f"선호 성격과 부합: {', '.join(pers_hits)}",
+            "score": 0.8,
+            "evidence": (doc.get("specialMark") or "")[:120],
+            "reason": ", ".join(pers_hits)
+        })
+
+    # 5) 활동/케어 적합
+    if survey:
+        desired_active, care_time = compute_desired_activity_and_care(survey)
+        a_act, a_care = infer_activity_and_care(doc)
+        act_match = 1 - min(1.0, abs(desired_active - a_act))
+        care_match = 1 - min(1.0, abs(care_time - a_care))
+        s_act = (act_match + care_match) / 2.0
+        if desired_active > 0.7: reason = "활동적"
+        elif desired_active < 0.4: reason = "차분함"
+        else: reason = "활동성 보통"
+        if s_act >= 0.8:
+            reasons.append({
+                "type": "activity_care",
+                "label": f"활동성/케어가 잘 맞음",
+                "score": float(s_act),
+                "evidence": f"동물 활동성 추정:{a_act}, 사용자 기대:{desired_active}, 케어 시간 추정:{a_care}, 사용자 기대:{care_time}",
+                "reason": reason
+            })
+
+    # 6) 위치 관련
+    user_addr = survey.get("address") if survey else None
+    loc_score = location_score(user_addr, doc.get("careAddr")) if user_addr else 0.0
+    if loc_score and loc_score > 0.7:
+        reasons.append({
+            "type": "location",
+            "label": f"지역 근접성: {round(loc_score,3)}",
+            "score": float(loc_score),
+            "evidence": doc.get("careAddr") or "",
+            "reason": "가까운 지역"
+        })
+
+    # 7) 우선순위(장기 체류 / 건강 등)
+    prio = meta.get("prio", 0.0)
+    if prio and prio > 1.5:
+        reasons.append({
+            "type": "priority",
+            "label": "우선 입양 권장(장기 보호/건강 고려)",
+            "score": float(prio),
+            "evidence": doc.get("specialMark") or "",
+            "reason": "우선 입양 권장"
+        })
+
+    # 8) 키워드 매칭 근거 (쿼리에 등장하는 단어가 동물 문서의 필드에 등장하면 명시)
+    q_keywords = find_query_keywords(q)
+    matched_kw = []
+    text_for_search = " ".join([
+        doc.get("kindNm","") or "",
+        doc.get("colorCd","") or "",
+        doc.get("specialMark","") or "",
+        (doc.get("extractedFeature") or {}).get("noticeable_features","") or "",
+        (doc.get("extractedFeature") or {}).get("fur_length","") or "",
+        (doc.get("extractedFeature") or {}).get("fur_texture","") or "",
+        (doc.get("extractedFeature") or {}).get("fur_pattern","") or "",
+    ]).lower()
+    for kw in q_keywords:
+        if kw.lower() in text_for_search:
+            matched_kw.append(kw)
+    if matched_kw:
+        reasons.append({
+            "type": "keyword",
+            "label": f"쿼리 키워드 일치: {', '.join(matched_kw)}",
+            "score": 0.5,
+            "evidence": ", ".join(matched_kw),
+            "reason": ", ".join(matched_kw)
+        })
+
+    return reasons
 
 class RecommendRequest(BaseModel):
     natural_query: str
@@ -306,8 +611,8 @@ def recommend_hybrid(body: HybridRequest):
 
     generic = is_generic_query(q)
     # 쿼리/설문 유사도 결합 비율
-    alpha = 0.3 if generic else 0.7  # generic일수록 설문 비중 증가
-    w_sim, w_comp, w_prio, w_loc = (0.2, 0.7, 0.1, 0.1) if generic else (0.7, 0.2, 0.1, 0.1)
+    alpha = 0.2 if generic else 0.8  # generic일수록 설문 비중 증가
+    w_sim, w_comp, w_prio, w_loc = (0.5, 0.5, 0.1, 0.1) if generic else (0.8, 0.2, 0.1, 0.1)
 
     # 2) 후보 생성
     species_list = extract_species(q)
@@ -357,8 +662,10 @@ def recommend_hybrid(body: HybridRequest):
     scored.sort(key=lambda x: x[0], reverse=True)
     topn = scored[: body.limit]
 
-    return [
-        {
+    results = []
+    for (s, d, meta) in topn:
+        reasons = build_reasons(survey, q, {"sim": meta.get("sim",0.0), "comp": meta.get("comp",0.0), "prio": meta.get("prio",0.0), "loc": meta.get("loc",0.0)}, d)
+        results.append({
             "final": round(s,4),
             "sim": round(meta["sim"],4),
             "compat": round(meta["comp"],4),
@@ -367,9 +674,11 @@ def recommend_hybrid(body: HybridRequest):
             "desertionNo": d.get("desertionNo"),
             "kindFullNm": d.get("kindFullNm"),
             "upKindNm": d.get("upKindNm"),
+            "colorCd": d.get("colorCd"),
             "age": d.get("age"),
             "careAddr": d.get("careAddr"),
+            "specialMark": d.get("specialMark"),
             "extractedFeature": d.get("extractedFeature"),
-        }
-        for (s, d, meta) in topn
-    ]
+            "reasons": reasons
+        })
+    return results

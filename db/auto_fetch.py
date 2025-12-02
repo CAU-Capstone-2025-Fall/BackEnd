@@ -21,6 +21,13 @@
 # except Exception as e:
 #     print("db connection error:", e)
 
+# lista = ["431370202500931",
+#     "411302202500843",
+#     "441560202501760",
+#     "426333202501140",
+#     "441409202501712"]
+# i = 0
+
 # def fetch_and_update():
 #     print("[자동 데이터 갱신] 시작")
 #     page = 1
@@ -30,13 +37,14 @@
 #         url = os.getenv("DATAPORTAL_URL")
 #         params = {
 #             "serviceKey": service_key,
-#             "bgnde": yesterday,
+#             # "desertion_no": "441409202501712",
+#             "bgnde": 20251121,
 #             "state": "protect",
 #             "numOfRows": 50,
 #             "_type": "json",
 #             "pageNo": page
 #         }
-#         response = requests.get(url, params=params, timeout=10)
+#         response = requests.get(url, params=params)
 #         try:
 #             data = response.json()
 #             items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
@@ -47,14 +55,23 @@
 #         if not items:
 #             break
 #         for item in items:
+#             print("처리 중인 유기동물 번호:", item.get("desertionNo"))
 #             collection.update_one(
 #                 {"desertionNo": item["desertionNo"]},
-#                 {"$set": {**item, "createdImg": None}},
+#                 {"$set": {**item, "createdImg": None, "extractedFeature": None, "improved":"0"}},
 #                 upsert=True
 #             )
+#         break
 #         page += 1
 #         sleep(0.1)
 #     print("[자동 데이터 갱신] 완료")
+
+# def fetch_improved():
+#     result = collection.update_many(
+#         {"improve": {"$exists": False}},
+#         {"$set": {"improve": "0"}}
+#     )
+#     print("업데이트된 문서 수:", result.modified_count)
 
 # # APScheduler로 매일 새벽 3시 작업 예약
 # def start_scheduler():
@@ -64,3 +81,4 @@
 
 # if __name__ == "__main__":
 #     fetch_and_update()
+#     # fetch_improved()
