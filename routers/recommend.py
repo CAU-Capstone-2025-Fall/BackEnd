@@ -428,14 +428,25 @@ def find_personality_matches(pref_pers: List[str], doc: Dict[str, Any]) -> List[
                 hits.append(pref)
     return hits
 
-def find_query_keywords(q: str) -> List[str]:
+def find_query_color_keywords(q: str) -> List[str]:
+    if not q: return []
+    ql = q.lower()
+    kws = []
+    # 단순 키워드 목록 (필요시 확장)
+    KEYWORDS = ["검은색","검정","흰색","하얀","갈색","회색","치즈","베이지","크림",
+                "점박이","얼룩"]
+    for k in KEYWORDS:
+        if k.lower() in ql:
+            kws.append(k)
+    return kws
+
+def find_query_other_keywords(q: str) -> List[str]:
     if not q: return []
     ql = q.lower()
     kws = []
     # 단순 키워드 목록 (필요시 확장)
     KEYWORDS = ["대형","중형","소형","활발","활동","차분","애교","귀여운","아기",
-                "검은색","검정","흰색","하얀","갈색","회색","치즈","베이지","크림",
-                "점박이","얼룩","짧은 털","긴 털",]
+                "짧은 털","긴 털","부드러운","거친","믹스","한국 고양이"]
     for k in KEYWORDS:
         if k.lower() in ql:
             kws.append(k)
@@ -451,7 +462,7 @@ def build_reasons(survey: Dict[str, Any], q: str, meta: Dict[str, float], doc: D
             "label": f"쿼리/프로필 임베딩 유사도 높음 (sim={round(sim,3)})",
             "score": float(sim),
             "evidence": "",
-            "reason": "전반적 유사도 높음"
+            "reason": "설문과 유사함"
         })
 
     # 3) 크기 매칭
@@ -522,20 +533,29 @@ def build_reasons(survey: Dict[str, Any], q: str, meta: Dict[str, float], doc: D
         })
 
     # 8) 키워드 매칭 근거 (쿼리에 등장하는 단어가 동물 문서의 필드에 등장하면 명시)
-    q_keywords = find_query_keywords(q)
+    q_c_keywords = find_query_color_keywords(q)
     matched_kw = []
     text_for_search = " ".join([
-        doc.get("kindNm","") or "",
         doc.get("colorCd","") or "",
+        doc.get("main_color","") or "",
+    ]).lower()
+    for kw in q_c_keywords:
+        if kw.lower() in text_for_search:
+            matched_kw.append(kw)
+
+    q_o_keywords = find_query_other_keywords(q)
+    text_for_search = " ".join([
+        doc.get("kindNm","") or "",
         doc.get("specialMark","") or "",
         (doc.get("extractedFeature") or {}).get("noticeable_features","") or "",
         (doc.get("extractedFeature") or {}).get("fur_length","") or "",
         (doc.get("extractedFeature") or {}).get("fur_texture","") or "",
         (doc.get("extractedFeature") or {}).get("fur_pattern","") or "",
     ]).lower()
-    for kw in q_keywords:
+    for kw in q_o_keywords:
         if kw.lower() in text_for_search:
             matched_kw.append(kw)
+    
     if matched_kw:
         reasons.append({
             "type": "keyword",
