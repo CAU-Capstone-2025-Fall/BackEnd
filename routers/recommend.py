@@ -10,6 +10,7 @@ import re
 import json
 import numpy as np
 from utils.location import location_score
+from utils.filed_embedding import user_to_4texts
 
 router = APIRouter(prefix="/recommand", tags=["recommand"])
 
@@ -24,18 +25,259 @@ client_db = MongoClient(MONGODB_URI)
 db = client_db["testdb"]
 collection = db["abandoned_animals"]
 survey_col = db["userinfo"]
+fav_col = db["favorites"]
 
 app = FastAPI()
+
+DOG_BREEDS = [
+  '모든 품종',
+  '믹스견',
+  '골든 리트리버',
+  '그레이 하운드',
+  '그레이트 덴',
+  '그레이트 피레니즈',
+  '기타',
+  '꼬똥 드 뚤레아',
+  '네오폴리탄 마스티프',
+  '노르포크 테리어',
+  '노리치 테리어',
+  '노퍽 테리어',
+  '뉴펀들랜드',
+  '닥스훈트',
+  '달마시안',
+  '댄디 딘몬트 테리어',
+  '도고 까니리오',
+  '도고 아르젠티노',
+  '도베르만',
+  '도사',
+  '도사 믹스견',
+  '동경견',
+  '라브라도 리트리버',
+  '라사 압소',
+  '라이카',
+  '래빗 닥스훈드',
+  '랫 테리어',
+  '레이크랜드 테리어',
+  '로디지안 리즈백',
+  '로트와일러',
+  '로트와일러 믹스견',
+  '마리노이즈',
+  '마스티프',
+  '말라뮤트',
+  '말티즈',
+  '맨체스터테리어',
+  '미니어쳐 닥스훈트',
+  '미니어쳐 불 테리어',
+  '미니어쳐 슈나우저',
+  '미니어쳐 푸들',
+  '미니어쳐 핀셔',
+  '미디엄 푸들',
+  '미텔 스피츠',
+  '바센지',
+  '바셋 하운드',
+  '버니즈 마운틴 독',
+  '베들링턴 테리어',
+  '벨기에 그로넨달',
+  '벨기에 쉽독',
+  '벨기에 테뷰런',
+  '벨지안 셰퍼드 독',
+  '보더 콜리',
+  '보르조이',
+  '보스턴 테리어',
+  '복서',
+  '볼로네즈',
+  '부비에 데 플랑드르',
+  '불 테리어',
+  '불독',
+  '브뤼셀그리펀',
+  '브리타니 스파니엘',
+  '블랙 테리어',
+  '비글',
+  '비숑 프리제',
+  '비어디드 콜리',
+  '비즐라',
+  '빠삐용',
+  '사모예드',
+  '살루키',
+  '삽살개',
+  '샤페이',
+  '세인트 버나드',
+  '센트럴 아시안 오브차카',
+  '셔틀랜드 쉽독',
+  '셰퍼드',
+  '슈나우져',
+  '스코티쉬 테리어',
+  '스코티시 디어하운드',
+  '스태퍼드셔 불 테리어',
+  '스태퍼드셔 불 테리어 믹스견',
+  '스탠다드 푸들',
+  '스피츠',
+  '시바',
+  '시베리안 허스키',
+  '시베리안라이카',
+  '시잉프랑세즈',
+  '시츄',
+  '시코쿠',
+  '실리햄 테리어',
+  '실키테리어',
+  '아나톨리안 셰퍼드',
+  '아메리칸 불독',
+  '아메리칸 스태퍼드셔 테리어',
+  '아메리칸 스태퍼드셔 테리어 믹스견',
+  '아메리칸 아키다',
+  '아메리칸 에스키모',
+  '아메리칸 코카 스파니엘',
+  '아메리칸 핏불 테리어',
+  '아메리칸 핏불 테리어 믹스견',
+  '아메리칸불리',
+  '아이리쉬 레드 앤 화이트 세터',
+  '아이리쉬 세터',
+  '아이리쉬 울프 하운드',
+  '아이리쉬소프트코튼휘튼테리어',
+  '아키다',
+  '아프간 하운드',
+  '알라스칸 말라뮤트',
+  '에어델 테리어',
+  '오브차카',
+  '오스트랄리안 셰퍼드 독',
+  '오스트랄리안 캐틀 독',
+  '오스트레일리안 켈피',
+  '올드 잉글리쉬 불독',
+  '올드 잉글리쉬 쉽독',
+  '와이마라너',
+  '와이어 폭스 테리어',
+  '요크셔 테리어',
+  '울프독',
+  '웨스트 시베리언 라이카',
+  '웨스트하이랜드화이트테리어',
+  '웰시 코기 카디건',
+  '웰시 코기 펨브로크',
+  '웰시 테리어',
+  '이탈리안 그레이 하운드',
+  '잉글리쉬 세터',
+  '잉글리쉬 스프링거 스파니엘',
+  '잉글리쉬 코카 스파니엘',
+  '잉글리쉬 포인터',
+  '자이언트 슈나우져',
+  '재패니즈 스피츠',
+  '잭 러셀 테리어',
+  '저먼 셰퍼드 독',
+  '저먼 와이어헤어드 포인터',
+  '저먼 포인터',
+  '저먼 헌팅 테리어',
+  '제주개',
+  '제페니즈칭',
+  '진도견',
+  '차우차우',
+  '차이니즈 크레스티드 독',
+  '치와와',
+  '카네 코르소',
+  '카레리안 베어독',
+  '카이훗',
+  '캐벌리어 킹 찰스 스파니엘',
+  '케니스펜더',
+  '케리 블루 테리어',
+  '케언 테리어',
+  '케인 코르소',
+  '코리아 트라이 하운드',
+  '코리안 마스티프',
+  '코카 스파니엘',
+  '코카 푸',
+  '코카시안오브차카',
+  '콜리',
+  '클라인스피츠',
+  '키슈',
+  '키스 훈드',
+  '토이 맨체스터 테리어',
+  '토이 푸들',
+  '티베탄 마스티프',
+  '파라오 하운드',
+  '파슨 러셀 테리어',
+  '팔렌',
+  '퍼그',
+  '페키니즈',
+  '페터데일테리어',
+  '포메라니안',
+  '포인터',
+  '폭스테리어',
+  '푸들',
+  '풀리',
+  '풍산견',
+  '프레사까나리오',
+  '프렌치 불독',
+  '프렌치 브리타니',
+  '플랫 코티드 리트리버',
+  '플롯하운드',
+  '피레니안 마운틴 독',
+  '필라 브라질레이로',
+  '핏불테리어',
+  '핏불테리어 믹스견',
+  '허배너스',
+  '화이트리트리버',
+  '화이트테리어',
+  '휘펫',
+]
 
 def get_embedding(text: str):
     resp = client_ai.embeddings.create(
         model=EMBED_MODEL,
         input=text
     )
-    return np.array(resp.data[0].embedding)
+    return np.array(resp.data[0].embedding, dtype=np.float32)
 
-def cosine_similarity(a: np.ndarray, b: np.ndarray):
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10))
+def get_embeddings_batch(texts: List[str]) -> List[np.ndarray]:
+    """
+    Batch embedding using the OpenAI client. Returns list of numpy arrays in same order.
+    Uses a simple retry on failure.
+    """
+    if not texts:
+        return []
+    # remove empty strings but preserve positions by mapping
+    orig_idx = []
+    req_texts = []
+    for i, t in enumerate(texts):
+        s = (t or "").strip()
+        if s == "":
+            orig_idx.append((i, None))
+        else:
+            orig_idx.append((i, s))
+            req_texts.append(s)
+    # if no real texts, return zeros
+    if len(req_texts) == 0:
+        return [np.zeros((1536,), dtype=np.float32) for _ in texts]
+
+    # call embeddings API in one batch (handle simple retry/backoff)
+    for attempt in range(5):
+        try:
+            resp = client_ai.embeddings.create(model=EMBED_MODEL, input=req_texts)
+            vectors = [np.array(r.embedding, dtype=np.float32) for r in resp.data]
+            break
+        except Exception as e:
+            wait = (2 ** attempt) * 0.5
+            if attempt == 4:
+                raise HTTPException(500, f"임베딩 생성 오류(재시도 후 실패): {e}")
+            else:
+                # lightweight sleep
+                import time
+                time.sleep(wait)
+    # reconstruct full list preserving empty positions
+    out = [None] * len(texts)
+    j = 0
+    for i, maybe in orig_idx:
+        if maybe is None:
+            out[i] = np.zeros((1536,), dtype=np.float32)
+        else:
+            out[i] = vectors[j]
+            j += 1
+    return out
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    if a is None or b is None or a.size == 0 or b.size == 0:
+        return 0.0
+    a = a.astype(np.float32)
+    b = b.astype(np.float32)
+    denom = (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10)
+    return float(np.dot(a, b) / denom)
 
 def extract_species(natural_query: str):
     species_map = {
@@ -209,7 +451,7 @@ def infer_activity_and_care(doc: Dict[str, Any]) -> Tuple[float, float]:
     elif "불독" in kind or "불도그" in kind or "퍼그" in kind:
         base_activity = 0.35
     elif "고양이" in kind or "한국 고양이" in kind or "고양" in kind:
-        base_activity = 0.50
+        base_activity = 0.30
 
     # --- Size / weight based adjustments ---
     a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
@@ -630,9 +872,24 @@ def recommend_hybrid(body: HybridRequest):
     p_emb = get_embedding(profile_text) if profile_text else None
 
     generic = is_generic_query(q)
-    # 쿼리/설문 유사도 결합 비율
+    # 쿼리/설문 유사도 결합 비율 
     alpha = 0.2 if generic else 0.8  # generic일수록 설문 비중 증가
-    w_sim, w_comp, w_prio, w_loc = (0.5, 0.5, 0.1, 0.1) if generic else (0.8, 0.2, 0.1, 0.1)
+    w_sim, w_prio, w_loc = (0.8, 0.1, 0.1)
+
+    # 필드별 임베딩 (색상, 활동성, 외모, 성격)
+    try:
+        user_fields = user_to_4texts(q, survey)  # returns dict with keys: color, activity, appearance, personality
+        # order them to create batch
+        field_order = ["color", "activity", "appearance", "personality"]
+        user_texts = [user_fields.get(k, "") for k in field_order]
+        user_vecs = get_embeddings_batch(user_texts)  # list of np arrays corresponding to user_texts
+        user_field_embs = {k: v for k, v in zip(field_order, user_vecs)}
+    except Exception as e:
+        # if embedding fails, fallback to None for all
+        user_field_embs = {k: None for k in ["color","activity","appearance","personality"]}
+
+    # tuning parameter: how much weight to give field-level matches vs global sim_mix
+    beta = 0.35  # 0..1 — 0 = ignore field-level, 1 = only field-level
 
     # 2) 후보 생성
     species_list = extract_species(q)
@@ -643,16 +900,40 @@ def recommend_hybrid(body: HybridRequest):
         else:
             base_filter["upKindNm"] = {"$in": species_list}
     
-    candidates: List[Tuple[float, Dict[str,Any]]] = []
+    candidates: List[Tuple[float, Dict[str,Any], Dict[str,float]]] = []
     for doc in collection.find(base_filter):
         a_emb = np.array(doc.get("embedding") or [], dtype=np.float32)
         if a_emb.size == 0: continue
 
         sim_q = cosine_similarity(q_emb, a_emb) if q_emb is not None else 0.0
         sim_p = cosine_similarity(p_emb, a_emb) if p_emb is not None else 0.0
-        sim_mix = (alpha * sim_q) + ((1 - alpha) * sim_p) if (q_emb is not None or p_emb is not None) else 0.0
+        sim_mix_baseline = (alpha * sim_q) + ((1 - alpha) * sim_p) if (q_emb is not None or p_emb is not None) else 0.0
+
+        field_scores: Dict[str, float] = {"color":0.0, "activity":0.0, "appearance":0.0, "personality":0.0}
+        try:
+            doc_field_embs_raw = doc.get("fieldEmbeddings") or {}
+            for k in ["color","activity","appearance","personality"]:
+                arr = doc_field_embs_raw.get(k)
+                if arr:
+                    fvec = np.array(arr, dtype=np.float32)
+                else:
+                    fvec = np.zeros((1536,), dtype=np.float32)
+                uvec = user_field_embs.get(k)
+                if uvec is None or uvec.size == 0:
+                    fsim = 0.0
+                else:
+                    fsim = cosine_similarity(uvec, fvec)
+                field_scores[k] = float(fsim)
+        except Exception:
+            # on any error, treat field scores as zeroes
+            field_scores = {k:0.0 for k in field_scores.keys()}
+        field_weights = {"color":0.32, "activity":0.38, "appearance":0.20, "personality":0.10}
+        total_w = sum(field_weights.values())
+        field_match_score = sum(field_scores[k] * (field_weights[k] / total_w) for k in field_scores.keys())
+
+        sim_mix = (1.0 - beta) * sim_mix_baseline + beta * field_match_score
         if sim_mix <= 0: continue
-        candidates.append((sim_mix, doc))
+        candidates.append((sim_mix, doc, {"sim_q": sim_q, "sim_p": sim_p, "field_match": field_scores}))
 
     if not candidates:
         return []
@@ -662,22 +943,22 @@ def recommend_hybrid(body: HybridRequest):
 
     # 3) 설문 제약 필터
     filtered = []
-    for sim, doc in pool:
+    for sim, doc, meta_sim in pool:
         if survey and not survey_constraints(survey, doc):
             continue
-        filtered.append((sim, doc))
+        filtered.append((sim, doc, meta_sim))
     if not filtered:
         filtered = pool
 
     # 4) 호환/우선노출/위치기반 계산 + 최종 재랭킹
     scored: List[Tuple[float, Dict[str,Any], Dict[str,float]]] = []
     user_addr = survey.get("address") if survey else None
-    for sim, doc in filtered:
-        comp = compat_score(survey, doc) if survey else 0.0
+    for sim, doc, meta_sim in filtered:
+        # comp = compat_score(survey, doc) if survey else 0.0 // 중복된 설문 정보 반영
         prio = priority_boost(doc)
         loc = location_score(user_addr, doc.get("careAddr"))
-        final = w_sim*sim + w_comp*comp + w_prio*(prio/3.0) + w_loc*loc  # prio 0~3 → 0~1 정규화
-        scored.append((final, doc, {"sim":sim, "comp":comp, "prio":prio, "loc":loc}))
+        final = w_sim*sim + w_prio*(prio/3.0) + w_loc*loc  # prio 0~3 → 0~1 정규화
+        scored.append((final, doc, {"sim":sim, "prio":prio, "loc":loc, **meta_sim}))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     topn = scored[: body.limit]
@@ -687,10 +968,11 @@ def recommend_hybrid(body: HybridRequest):
         reasons = build_reasons(survey, q, {"sim": meta.get("sim",0.0), "comp": meta.get("comp",0.0), "prio": meta.get("prio",0.0), "loc": meta.get("loc",0.0)}, d)
         results.append({
             "final": round(s,4),
-            "sim": round(meta["sim"],4),
-            "compat": round(meta["comp"],4),
-            "priority": round(meta["prio"],3),
-            "location": round(meta["loc"],4),
+            "sim": round(meta.get("sim",0.0),4),
+            "comp": 0.0,
+            "priority": round(meta.get("prio",0.0),3),
+            "location": round(meta.get("loc",0.0),4),
+            "field_match": meta.get("field_match", {}),
             "desertionNo": d.get("desertionNo"),
             "kindFullNm": d.get("kindFullNm"),
             "upKindNm": d.get("upKindNm"),
