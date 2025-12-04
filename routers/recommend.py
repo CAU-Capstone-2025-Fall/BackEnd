@@ -414,24 +414,66 @@ def size_match(pref: str, a_size: str) -> float:
 # 활동성 / 케어 추정
 # -------------------------
 
+def apply_breed_activity(base_activity: float, upkind: str, kind: str) -> float:
+    kind = kind.replace(" ", "").lower()
+
+    # 고양이 활동성 테이블
+    CAT_ACTIVITY_SCORE = {
+        "벵갈": 0.25, "아비시니안": 0.20, "시암": 0.18, "샴": 0.18,
+        "싱가퓨라": 0.20, "소말리": 0.20,
+        "러시안블루": 0.05, "브리티시쇼트헤어": 0.00, "한국고양이": 0.05,
+        "메인쿤": 0.05, "노르웨이숲": 0.05, "터키시앙고라": 0.10,
+        "페르시안": -0.15, "스코티시폴드": -0.10, "렉돌": -0.05,
+    }
+
+    # 개 활동성 테이블
+    DOG_ACTIVITY_SCORE = {
+        "보더콜리": 0.35, "저먼셰퍼드독": 0.30,
+        "벨지안셰퍼드독": 0.30, "래브라도리트리버": 0.25,
+        "골든리트리버": 0.25, "사모예드": 0.25,
+        "시베리안허스키": 0.30, "말라뮤트": 0.25,
+        "진도견": 0.25, "풍산견": 0.25,
+        "잭러셀테리어": 0.30, "비글": 0.25,
+        "시바": 0.10, "웰시코기": 0.10, "셔틀랜드쉽독": 0.15,
+        "슈나우저": 0.10, "토이푸들": 0.05, "포메라니안": 0.05,
+        "불독": -0.20, "프렌치불독": -0.20, "퍼그": -0.20,
+        "페키니즈": -0.15, "시츄": -0.10, "차우차우": -0.15,
+        "그레이트피레니즈": -0.05,
+    }
+
+    score_map = CAT_ACTIVITY_SCORE if upkind == "고양이" else DOG_ACTIVITY_SCORE if upkind == "개" else {}
+
+    for breed, score in score_map.items():
+        if breed in kind:
+            return base_activity + score
+
+    return base_activity
+
 def infer_activity_and_care(doc: Dict[str, Any]) -> Tuple[float, float]:
     base_activity = 0.50
     grooming_base = 0.45
     medical_need = 0.0
 
-    kind = (doc.get("upKindNm") or doc.get("kindFullNm") or "").lower()
-    if "리트리버" in kind or "보더콜리" in kind or "허스키" in kind:
-        base_activity = 0.80
-    elif "불독" in kind or "불도그" in kind or "퍼그" in kind:
-        base_activity = 0.35
-    elif "고양이" in kind or "한국 고양이" in kind or "고양" in kind:
-        base_activity = 0.50
+    upkind = (doc.get("upKindNm") or "").strip().lower()
+    kindNm = (doc.get("kindNm") or "").lower()
+
+    base_activity = apply_breed_activity(base_activity, upkind, kindNm)
+
+    SIZE_LARGE_WORDS = ["대형", "큰", "건장", "체구 큼", "묵직", "large", "big"]
+    SIZE_SMALL_WORDS = ["소형", "작", "아담", "작은 체구", "small", "tiny"]
 
     a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
     rsize = a_size.lower()
-    if "대형" in rsize or "큰" in rsize:
+    if (
+        _text_has_keywords(rsize, SIZE_LARGE_WORDS)
+        or _semantic_has_keywords(rsize, SIZE_LARGE_WORDS, threshold=0.55)
+    ):
         base_activity += 0.05
-    if "소형" in rsize or "작" in rsize:
+
+    if (
+        _text_has_keywords(rsize, SIZE_SMALL_WORDS)
+        or _semantic_has_keywords(rsize, SIZE_SMALL_WORDS, threshold=0.55)
+    ):
         base_activity -= 0.05
 
     age_yrs = _age_in_years(doc.get("age") or "")
