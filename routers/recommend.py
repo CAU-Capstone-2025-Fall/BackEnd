@@ -10,8 +10,8 @@ import re
 import numpy as np
 from functools import lru_cache
 from utils.location import location_score
+from utils.filed_embedding import user_to_4texts
 import json
-import os
 from pathlib import Path
 
 router = APIRouter(prefix="/recommand", tags=["recommand"])
@@ -40,6 +40,7 @@ client_db = MongoClient(MONGODB_URI)
 db = client_db["testdb"]
 collection = db["abandoned_animals"]
 survey_col = db["userinfo"]
+fav_col = db["favorites"]
 
 app = FastAPI()
 
@@ -59,6 +60,51 @@ def get_embedding(text: str) -> np.ndarray:
     )
     return np.array(resp.data[0].embedding, dtype=np.float32)
 
+def get_embeddings_batch(texts: List[str]) -> List[np.ndarray]:
+    """
+    Batch embedding using the OpenAI client. Returns list of numpy arrays in same order.
+    Uses a simple retry on failure.
+    """
+    if not texts:
+        return []
+    # remove empty strings but preserve positions by mapping
+    orig_idx = []
+    req_texts = []
+    for i, t in enumerate(texts):
+        s = (t or "").strip()
+        if s == "":
+            orig_idx.append((i, None))
+        else:
+            orig_idx.append((i, s))
+            req_texts.append(s)
+    # if no real texts, return zeros
+    if len(req_texts) == 0:
+        return [np.zeros((1536,), dtype=np.float32) for _ in texts]
+
+    # call embeddings API in one batch (handle simple retry/backoff)
+    for attempt in range(5):
+        try:
+            resp = client_ai.embeddings.create(model=EMBED_MODEL, input=req_texts)
+            vectors = [np.array(r.embedding, dtype=np.float32) for r in resp.data]
+            break
+        except Exception as e:
+            wait = (2 ** attempt) * 0.5
+            if attempt == 4:
+                raise HTTPException(500, f"임베딩 생성 오류(재시도 후 실패): {e}")
+            else:
+                # lightweight sleep
+                import time
+                time.sleep(wait)
+    # reconstruct full list preserving empty positions
+    out = [None] * len(texts)
+    j = 0
+    for i, maybe in orig_idx:
+        if maybe is None:
+            out[i] = np.zeros((1536,), dtype=np.float32)
+        else:
+            out[i] = vectors[j]
+            j += 1
+    return out
 
 @lru_cache(maxsize=1024)
 def _cached_text_embedding(text: str) -> np.ndarray:
@@ -80,8 +126,6 @@ def _get_keyword_embedding(keyword: str) -> np.ndarray:
 
     print(f"[EMB][WARN] keyword '{kw}' not in precomputed KEYWORD_EMBEDDINGS, calling API")
     return get_embedding(kw)
-
-
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10))
@@ -454,6 +498,7 @@ def infer_activity_and_care(doc: Dict[str, Any]) -> Tuple[float, float]:
     grooming_base = 0.45
     medical_need = 0.0
 
+<<<<<<< HEAD
     upkind = (doc.get("upKindNm") or "").strip().lower()
     kindNm = (doc.get("kindNm") or "").lower()
 
@@ -461,6 +506,15 @@ def infer_activity_and_care(doc: Dict[str, Any]) -> Tuple[float, float]:
 
     SIZE_LARGE_WORDS = ["대형", "큰", "건장", "체구 큼", "묵직", "large", "big"]
     SIZE_SMALL_WORDS = ["소형", "작", "아담", "작은 체구", "small", "tiny"]
+=======
+    kind = (doc.get("upKindNm") or doc.get("kindFullNm") or "").lower()
+    if "리트리버" in kind or "보더콜리" in kind or "허스키" in kind:
+        base_activity = 0.80
+    elif "불독" in kind or "불도그" in kind or "퍼그" in kind:
+        base_activity = 0.35
+    elif "고양이" in kind or "한국 고양이" in kind or "고양" in kind:
+        base_activity = 0.30
+>>>>>>> 0a1faa7ae3e4026990b5463bb954650b5a7b34ea
 
     a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
     rsize = a_size.lower()
@@ -1274,6 +1328,21 @@ def recommend_hybrid(body: HybridRequest):
         alpha = 0.7
         w_sim, w_comp, w_prio, w_loc = 0.6, 0.25, 0.10, 0.05
 
+    # 필드별 임베딩 (색상, 활동성, 외모, 성격)
+    try:
+        user_fields = user_to_4texts(q, survey)  # returns dict with keys: color, activity, appearance, personality
+        # order them to create batch
+        field_order = ["color", "activity", "appearance", "personality"]
+        user_texts = [user_fields.get(k, "") for k in field_order]
+        user_vecs = get_embeddings_batch(user_texts)  # list of np arrays corresponding to user_texts
+        user_field_embs = {k: v for k, v in zip(field_order, user_vecs)}
+    except Exception as e:
+        # if embedding fails, fallback to None for all
+        user_field_embs = {k: None for k in ["color","activity","appearance","personality"]}
+
+    # tuning parameter: how much weight to give field-level matches vs global sim_mix
+    beta = 0.35  # 0..1 — 0 = ignore field-level, 1 = only field-leve
+
     # 감점 가중치 (알레르기/현 반려동물 충돌은 강한 페널티)
     w_allergy  = 0.6
     w_conflict = 0.3
@@ -1321,7 +1390,7 @@ def recommend_hybrid(body: HybridRequest):
                 valid_fav_embs_by_species.setdefault(species, []).append(f_emb)
 
     # 4) 후보 생성 + 유사도 계산
-    candidates: List[Tuple[float, Dict[str,Any], Dict[str,Any]]] = []
+    candidates: List[Tuple[float, Dict[str,Any], Dict[str,Any], Dict[str, Any]]] = []
 
     for doc in collection.find(base_filter):
         a_emb = np.array(doc.get("embedding") or [], dtype=np.float32)
@@ -1330,11 +1399,31 @@ def recommend_hybrid(body: HybridRequest):
 
         sim_q = cosine_similarity(q_emb, a_emb) if q_emb is not None else 0.0
         sim_p = cosine_similarity(p_emb, a_emb) if p_emb is not None else 0.0
+        base_mix = (alpha * sim_q) + ((1 - alpha) * sim_p) if (q_emb is not None or p_emb is not None) else 0.0
 
-        base_mix = 0.0
-        if q_emb is not None or p_emb is not None:
-            base_mix = (alpha * sim_q) + ((1 - alpha) * sim_p)
+        field_scores: Dict[str, float] = {"color":0.0, "activity":0.0, "appearance":0.0, "personality":0.0}
+        try:
+            doc_field_embs_raw = doc.get("fieldEmbeddings") or {}
+            for k in ["color","activity","appearance","personality"]:
+                arr = doc_field_embs_raw.get(k)
+                if arr:
+                    fvec = np.array(arr, dtype=np.float32)
+                else:
+                    fvec = np.zeros((1536,), dtype=np.float32)
+                uvec = user_field_embs.get(k)
+                if uvec is None or uvec.size == 0:
+                    fsim = 0.0
+                else:
+                    fsim = cosine_similarity(uvec, fvec)
+                field_scores[k] = float(fsim)
+        except Exception:
+            # on any error, treat field scores as zeroes
+            field_scores = {k:0.0 for k in field_scores.keys()}
+        field_weights = {"color":0.35, "activity":0.35, "appearance":0.20, "personality":0.10}
+        total_w = sum(field_weights.values())
+        field_match_score = sum(field_scores[k] * (field_weights[k] / total_w) for k in field_scores.keys())
 
+        sim_mix = (1.0 - beta) * base_mix + beta * field_match_score
         # 즐겨찾기 기반 유사도 (같은 종만)
         sim_f = 0.0
         species = (doc.get("upKindNm") or "").strip()
@@ -1351,7 +1440,7 @@ def recommend_hybrid(body: HybridRequest):
         if sim_mix <= 0:  # 완전 무관한 경우 제거
             continue
 
-        candidates.append((sim_mix, doc, {"sim_q": sim_q, "sim_p": sim_p, "sim_f": sim_f}))
+        candidates.append((sim_mix, doc, {"sim_q": sim_q, "sim_p": sim_p, "sim_f": sim_f, "field_match": field_scores}))
 
     if not candidates:
         return []
@@ -1406,6 +1495,7 @@ def recommend_hybrid(body: HybridRequest):
             "comp": comp,
             "prio": prio,
             "loc": loc_raw,
+            "field_match": extra_meta.get("field_match", {}),
             "loc_component": loc_component,
             "allergy_penalty": allergy_penalty,
             "pet_conflict_penalty": conflict_penalty,
@@ -1440,6 +1530,7 @@ def recommend_hybrid(body: HybridRequest):
             "compat": safe_round(meta.get("comp", 0.0), 4, default=0.0),
             "priority": safe_round(meta.get("prio", 0.0), 3, default=0.0),
             "location": safe_round(meta.get("loc", 0.0), 4, default=0.0),
+            "field_match": meta.get("field_match", {}),
             "desertionNo": d.get("desertionNo"),
             "kindFullNm": d.get("kindFullNm"),
             "upKindNm": d.get("upKindNm"),
