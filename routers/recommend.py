@@ -498,7 +498,6 @@ def infer_activity_and_care(doc: Dict[str, Any]) -> Tuple[float, float]:
     grooming_base = 0.45
     medical_need = 0.0
 
-<<<<<<< HEAD
     upkind = (doc.get("upKindNm") or "").strip().lower()
     kindNm = (doc.get("kindNm") or "").lower()
 
@@ -506,15 +505,6 @@ def infer_activity_and_care(doc: Dict[str, Any]) -> Tuple[float, float]:
 
     SIZE_LARGE_WORDS = ["대형", "큰", "건장", "체구 큼", "묵직", "large", "big"]
     SIZE_SMALL_WORDS = ["소형", "작", "아담", "작은 체구", "small", "tiny"]
-=======
-    kind = (doc.get("upKindNm") or doc.get("kindFullNm") or "").lower()
-    if "리트리버" in kind or "보더콜리" in kind or "허스키" in kind:
-        base_activity = 0.80
-    elif "불독" in kind or "불도그" in kind or "퍼그" in kind:
-        base_activity = 0.35
-    elif "고양이" in kind or "한국 고양이" in kind or "고양" in kind:
-        base_activity = 0.30
->>>>>>> 0a1faa7ae3e4026990b5463bb954650b5a7b34ea
 
     a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
     rsize = a_size.lower()
