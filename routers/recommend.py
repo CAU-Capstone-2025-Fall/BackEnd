@@ -1413,7 +1413,6 @@ def recommend_hybrid(body: HybridRequest):
         total_w = sum(field_weights.values())
         field_match_score = sum(field_scores[k] * (field_weights[k] / total_w) for k in field_scores.keys())
 
-        sim_mix = (1.0 - beta) * base_mix + beta * field_match_score
         # 즐겨찾기 기반 유사도 (같은 종만)
         sim_f = 0.0
         species = (doc.get("upKindNm") or "").strip()
@@ -1422,8 +1421,12 @@ def recommend_hybrid(body: HybridRequest):
             sim_f = max(cosine_similarity(a_emb, fe) for fe in fav_emb_list)
 
         # 쿼리가 짧을수록 base_mix 비중을 줄인 것은 alpha에서 이미 반영됨
-        if sim_f > 0:
-            sim_mix = 0.7 * base_mix + 0.3 * sim_f
+        if ((sim_f > 0) and (field_match_score > 0)):
+            sim_mix = 0.7 * base_mix + 0.2 * sim_f+ 0.1 * field_match_score
+        elif (sim_f > 0):
+            sim_mix = 0.8 * base_mix + 0.2 * sim_f
+        elif (field_match_score > 0):
+            sim_mix = 0.8 * base_mix + 0.2 * field_match_score
         else:
             sim_mix = base_mix
 
