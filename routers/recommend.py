@@ -1502,9 +1502,6 @@ def recommend_hybrid(body: HybridRequest):
     # alpha: 쿼리 임베딩 vs 프로필 임베딩 비율
     #  - generic(0)에 가까우면 0.0
     #  - 매우 도메인 특화(1)에 가까우면 0.7
-    alpha = 0.7 * specificity  # 0.0 ~ 0.7
-    
-    w_sim, w_comp, w_prio, w_loc = 0.6, 0.25, 0.10, 0.05
 
     # 필드별 임베딩 (색상, 활동성, 외모, 성격)
     try:
@@ -1569,14 +1566,8 @@ def recommend_hybrid(body: HybridRequest):
 
     w_sim, w_comp, w_prio, w_loc = 0.40, 0.50, 0.05, 0.05
     w_allergy, w_conflict = 0.8, 0.5
-    alpha, beta = 0.50, 0.20 # 추후 변경 가능
-
-    if is_generic_query(q):
-        w_sim, w_comp = 0.35, 0.55
-        alpha= 0.30
-    else:
-        w_sim, w_comp = 0.45, 0.45
-        alpha= 0.70
+    alpha = 0.7 * specificity  # 0.0 ~ 0.7
+    w_sim, w_comp = 0.35+0.1*specificity, 0.55-0.1*specificity
 
     for doc in collection.find(base_filter):
         is_cat = (doc.get("upKindNm") == "고양이")
