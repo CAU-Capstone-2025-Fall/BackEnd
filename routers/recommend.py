@@ -44,6 +44,112 @@ fav_col = db["favorites"]
 
 app = FastAPI()
 
+def merge_similarity_scores(
+    base_mix: float,
+    sim_f: float,
+    field_match_score: float,
+) -> float:
+    """
+    세 가지 점수(base, favorite, field)를 규칙에 따라 병합:
+    - 0이면 영향에서 제외
+    - 표준편차가 작으면 단순 평균
+    - 표준편차가 큰 경우:
+      * Outlier 없음(또는 모호): 
+        - 가장 높은 점수가 base면 (전체 평균 + base)/2
+        - 그 외에는 전체 평균
+      * Outlier 존재:
+        - outlier가 가장 작은 값일 때:
+          · 그 값이 base면: 나머지 둘 평균과 base의 평균
+          · 그 외: 가장 작은 값 무시, 나머지 둘 평균
+        - outlier가 가장 큰 값일 때:
+          · 그 값이 favorite면: 무시, 나머지 둘 중 더 큰 값
+          · 그 외: 전체 평균과 최대값의 평균
+    """
+
+    values = {
+        "base": float(base_mix),
+        "fav": float(sim_f),
+        "field": float(field_match_score),
+    }
+
+    # 0 이하 값은 영향에서 제외
+    non_zero = {name: v for name, v in values.items() if v > 0.0}
+
+    if not non_zero:
+        return 0.0
+
+    # 유효 점수가 1개면 그대로 사용
+    if len(non_zero) == 1:
+        return next(iter(non_zero.values()))
+
+    # 유효 점수가 2개면 단순 평균
+    if len(non_zero) == 2:
+        return sum(non_zero.values()) / 2.0
+
+    names = list(non_zero.keys())       # ["base","fav","field"] 
+    vals = np.array([non_zero[n] for n in names], dtype=float)
+
+    mean = float(vals.mean())
+    std = float(vals.std(ddof=0))
+
+    # 1) 표준편차가 작으면 그냥 평균
+    SMALL_STD = 0.03  
+    if std < SMALL_STD:
+        return mean
+
+    # 2) outlier 탐지
+    #    z-score가 임계값보다 크면 outlier로 간주
+    outlier_idx = []
+    if std > 0:
+        z = np.abs(vals - mean) / std
+        Z_THRESHOLD = 1.2  
+        outlier_idx = [i for i, zi in enumerate(z) if zi > Z_THRESHOLD]
+
+    # outlier가 정확히 1개일 때만 "Outlier 존재" 케이스로 처리
+    if len(outlier_idx) == 1:
+        oi = outlier_idx[0]
+        v_out = vals[oi]
+        name_out = names[oi]
+        min_val = float(vals.min())
+        max_val = float(vals.max())
+
+        # -------- outlier가 가장 작은 값인 경우 --------
+        if v_out == min_val:
+            if name_out == "base":
+                # "가장 작은게 베이스 값인 경우, 나머지 두 값의 평균+베이스와의 평균"
+                others = [vals[i] for i in range(3) if i != oi]
+                others_mean = float(sum(others) / len(others))
+                return (others_mean + values["base"]) / 2.0
+            else:
+                # "가장 작은값 무시. 나머지 값의 평균 구함"
+                others = [vals[i] for i in range(3) if i != oi]
+                return float(sum(others) / len(others))
+
+        # -------- outlier가 가장 큰 값인 경우 --------
+        if v_out == max_val:
+            if name_out == "fav":
+                # "가장 큰게 즐겨찾기인 경우, 무시. 나머지 값의 더 큰 값으로 결정"
+                others = [vals[i] for i in range(3) if i != oi]
+                return float(max(others))
+            else:
+                # "이외의 경우에는 세값의 평균과 가장 큰 값의 퍙균"
+                return (mean + max_val) / 2.0
+
+        # 이론상 여기 올 일은 거의 없지만, 이상 케이스는 그냥 평균으로
+        return mean
+
+    # 3) outlier가 없거나, 여러 개라서 모호한 경우
+    max_val = float(vals.max())
+    idx_max = int(vals.argmax())
+    name_max = names[idx_max]
+
+    if name_max == "base":
+        # "가장 높은 점수가 베이스라면 세 값의 평균과의 베이스와의 평균 구하기."
+        return (mean + values["base"]) / 2.0
+    else:
+        # "이외에는, 세 값의 평균 구하기"
+        return mean
+
 def safe_round(x: Any, ndigits: int = 4, default: float = 0.0) -> float:
     try:
         if x is None:
@@ -367,46 +473,87 @@ def priority_boost(doc: Dict[str, Any]) -> float:
 
 
 # -------------------------
-# 쿼리 generic 여부
+# 쿼리 generic한 정도
 # -------------------------
 
-def is_generic_query(q: str) -> bool:
+def query_domain_specificity(q: str) -> float:
+    """
+    쿼리가 도메인(유기동물/크기/색/성격 등)에 얼마나 특화되어 있는지 0~1로 반환.
+    - 도메인 키워드 hit 개수 (substring + 의미 기반)
+    - 토큰 길이(너무 짧은 문장은 generic에 가깝게)
+    두 가지를 섞어서 스코어링.
+    """
     if not q or len(q.strip()) < 4:
-        return True
-    q = q.lower()
+        return 0.0
+
+    ql = q.lower()
 
     KEYWORDS = [
-        "개","강아지","dog","고양","cat","햄스터","토끼","파충","조류",
-        "검정","흰","베이지","갈","회색","연한","진한",
-        "소형","중형","대형","큰", "작은", "짧은 털","긴 털","장모","단모",
-        "활발","차분","조용","사교","독립","애교","온순","귀여운",
-        "귀","눈","꼬리","털","무늬","점박이","얼룩",
+        # 종 관련
+    "개","강아지","dog","멍멍이",
+    "고양이","냥이","cat",
+    "기타","토끼","햄스터","기니피그","고슴도치","거북이","새","파충류",
+
+    # 크기/털 관련
+    "대형","큰 편","size large","라지","big dog","big cat",
+    "중형","보통 크기","medium size","middle size",
+    "소형","작은 편","small size","little dog","little cat",
+    "장모","긴 털","long hair","털이 풍성한",
+    "단모","짧은 털","short hair","털이 짧은",
+    "중간 길이 털","세미 롱","medium hair",
+
+    # 활동성/성격
+    "활발","사교","사람 좋아","장난","에너지","놀이", "활동적",
+    "낯가림","겁","경계","소심","예민","조심","민감",
+    "병","감염","상처","치료","질환","장애","실명","결손","아픈","염증",
+    "피부","털빠짐","비듬","기생충",
+
+    # 성격 태그
+    "차분","조용","온순","침착","순함","평온","차분함",
+    "활동","신남","뛰","활기","명랑","발랄",
+    "독립","자립","혼자 잘","스스로","독립적",
+    "애교","교감","스킨십","친밀","붙임성","친화","귀여운",
+
+    # 색/기타 키워드
+    "검은색","검정","흰색","하얀","갈색","회색","치즈","베이지","크림", "검은", "흰"
+    "점박이","얼룩",
+    "아기","짧은 털","긴 털","부드러운","거친","믹스","한국 고양이"
+    ,"고양","파충","조류","연한","진한","큰","작은","귀","눈","꼬리","털","무늬", "작"
+    ,"건장", "체구 큼","묵직", "large", "big", "아담", "작은 체구", "small", "tiny"
     ]
 
-    # 1차: 단순 substring
-    has_domain_kw = any(k in q for k in KEYWORDS)
+    # 1) substring 기반 도메인 키워드 hit
+    hit_set = {k for k in KEYWORDS if k in ql}
+    hit_count = len(hit_set)
 
-    # 2차: 의미 기반 도메인 키워드 탐지 (없을 때만)
-    if not has_domain_kw:
-        try:
-            q_emb = _cached_text_embedding(q)
-            THRESHOLD = 0.60
-            for k in KEYWORDS:
-                kw_emb = _get_keyword_embedding(k)
-                sim = cosine_similarity(q_emb, kw_emb)
-                if sim >= THRESHOLD:
-                    has_domain_kw = True
-                    break
-        except Exception:
-            pass
+    # 2) 의미 기반 도메인 키워드 hit (substring이 거의 없을 때 특히 의미 있음)
+    try:
+        q_emb = _cached_text_embedding(ql)
+        THRESHOLD = 0.60
+        for k in KEYWORDS:
+            if k in hit_set:
+                continue
+            kw_emb = _get_keyword_embedding(k)
+            sim = cosine_similarity(q_emb, kw_emb)
+            if sim >= THRESHOLD:
+                hit_set.add(k)
+    except Exception:
+        pass
 
-    if has_domain_kw:
-        tokens = re.findall(r"[가-힣a-zA-Z0-9]+", q)
-        return len(tokens) < 3
+    hit_count = len(hit_set)
 
-    # 키워드가 전혀 없으면 generic
-    return True
+    # 3) 쿼리 길이(토큰 수) - 너무 짧으면 generic한 편
+    tokens = re.findall(r"[가-힣a-zA-Z0-9]+", ql)
+    token_count = len(tokens)
 
+    # 최대 4개 도메인 키워드를 기준으로 0~1 스케일
+    domain_factor = min(hit_count / 4.0, 1.0)
+    # 토큰 6개 이상이면 길이 factor 1.0
+    length_factor = min(token_count / 6.0, 1.0)
+
+    # 도메인 키워드 히트에 좀 더 가중치(0.7), 길이(0.3)
+    spec = 0.7 * domain_factor + 0.3 * length_factor
+    return _clamp01(spec)
 
 # -------------------------
 # 설문 → 프로필 텍스트
@@ -1310,13 +1457,15 @@ def recommend_hybrid(body: HybridRequest):
     profile_text = build_profile_text(survey) if survey else ""
     p_emb = _cached_text_embedding(profile_text) if profile_text else None
 
-    generic = is_generic_query(q)
-    if generic:
-        alpha = 0.3
-        w_sim, w_comp, w_prio, w_loc = 0.4, 0.4, 0.15, 0.05
-    else:
-        alpha = 0.7
-        w_sim, w_comp, w_prio, w_loc = 0.6, 0.25, 0.10, 0.05
+    # 쿼리의 도메인 특이성(0~1): 도메인 키워드 hit 개수 + 쿼리 길이 기반
+    specificity = query_domain_specificity(q)
+
+    # alpha: 쿼리 임베딩 vs 프로필 임베딩 비율
+    #  - generic(0)에 가까우면 0.0
+    #  - 매우 도메인 특화(1)에 가까우면 0.7
+    alpha = 0.7 * specificity  # 0.0 ~ 0.7
+    
+    w_sim, w_comp, w_prio, w_loc = 0.6, 0.25, 0.10, 0.05
 
     # 필드별 임베딩 (색상, 활동성, 외모, 성격)
     try:
@@ -1420,15 +1569,7 @@ def recommend_hybrid(body: HybridRequest):
         if fav_emb_list:
             sim_f = max(cosine_similarity(a_emb, fe) for fe in fav_emb_list)
 
-        # 쿼리가 짧을수록 base_mix 비중을 줄인 것은 alpha에서 이미 반영됨
-        if ((sim_f > 0) and (field_match_score > 0)):
-            sim_mix = 0.7 * base_mix + 0.2 * sim_f+ 0.1 * field_match_score
-        elif (sim_f > 0):
-            sim_mix = 0.8 * base_mix + 0.2 * sim_f
-        elif (field_match_score > 0):
-            sim_mix = 0.8 * base_mix + 0.2 * field_match_score
-        else:
-            sim_mix = base_mix
+        sim_mix = merge_similarity_scores(base_mix, sim_f, field_match_score)
 
         if sim_mix <= 0:  # 완전 무관한 경우 제거
             continue

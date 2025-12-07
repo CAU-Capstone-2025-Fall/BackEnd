@@ -1,10 +1,42 @@
 import re
 import numpy as np
 from typing import Dict, Any, List, Tuple, Callable, Optional
+from routers.recommend import _semantic_has_keywords, _text_has_keywords
 
 # Simple in-memory caches to reduce duplicated embedding calls within process lifetime
 _EMBED_CACHE: Dict[str, np.ndarray] = {}
 _DOC_FIELD_EMB_CACHE: Dict[str, Dict[str, np.ndarray]] = {}
+
+COLOR_KEYWORDS = [
+    "검정", "검은", "흰", "하얀",
+    "갈색", "치즈", "회색",
+    "베이지", "크림",
+    "검은색", "흰색",
+]
+
+ACTIVITY_ACTIVE_KEYWORDS = ["활발", "에너지", "활동적", "활동"]
+ACTIVITY_CALM_KEYWORDS   = ["차분", "조용", "온순"]
+
+
+def _smart_has_keywords(
+    text: Optional[str],
+    keywords: List[str],
+    threshold: float = 0.60,
+) -> bool:
+    """
+    1순위: _text_has_keywords 로 빠른 문자열 기반 매칭
+    2순위: 안 잡히면 _semantic_has_keywords 로 의미 기반 매칭
+    """
+    if not text or not keywords:
+        return False
+
+    # 1단계: 빠른 텍스트 매칭
+    if _text_has_keywords(text, keywords):
+        return True
+
+    # 2단계: 의미 기반 매칭 (임베딩 사용)
+    return _semantic_has_keywords(text, keywords, threshold=threshold)
+
 
 # small cosine helper
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -81,22 +113,23 @@ def doc_to_4texts(doc: Dict[str, Any]) -> Dict[str, str]:
 # User (profile + query) -> 4 field texts
 def user_to_4texts(user_query: Optional[str], profile: Optional[Dict[str, Any]]) -> Dict[str, str]:
     profile = profile or {}
-    # color: extract color keywords from user_query or profile (favoriteAnimals maybe color?)
-    color_parts = []
+    color_parts: List[str] = []
     if user_query:
-        # simple regex for known color words (extend as needed)
-        colors = ["검정", "검은", "흰","하얀", "갈색", "치즈", "회색", "베이지", "크림", "검은색", "흰색"]
-        for c in colors:
-            if c in user_query:
+        for c in COLOR_KEYWORDS:
+            if _smart_has_keywords(user_query, [c], threshold=0.65):
                 color_parts.append(c)
+        if color_parts:
+            color_parts = list(dict.fromkeys(color_parts))
     # activity: from profile.activityLevel and user_query mentions like '활발'
-    activity_parts = []
+    activity_parts: List[str] = []
     if profile.get("activityLevel"):
         activity_parts.append(f"활동수준: {profile.get('activityLevel')}")
     if user_query:
-        if any(k in user_query for k in ["활발", "에너지", "활동적", "활동"]):
+        # 활발한 타입 선호
+        if _smart_has_keywords(user_query, ACTIVITY_ACTIVE_KEYWORDS, threshold=0.60):
             activity_parts.append("활발")
-        if any(k in user_query for k in ["차분", "조용", "온순"]):
+        # 차분한 타입 선호
+        if _smart_has_keywords(user_query, ACTIVITY_CALM_KEYWORDS, threshold=0.60):
             activity_parts.append("차분")
     # appearance: from userQuery (e.g. '털이 짧은', '점박이')
     appearance_parts = []
