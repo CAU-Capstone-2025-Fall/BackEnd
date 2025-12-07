@@ -1,6 +1,7 @@
 import os
 from typing import List, Dict, Any, Optional, Tuple
 from fastapi import APIRouter, FastAPI, HTTPException
+import joblib
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -13,6 +14,7 @@ from utils.location import location_score
 from utils.filed_embedding import user_to_4texts
 import json
 from pathlib import Path
+from utils.train_ltr_model import extract_features_for_ltr
 
 router = APIRouter(prefix="/recommand", tags=["recommand"])
 
@@ -34,6 +36,16 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MONGODB_URI    = os.getenv("MONGODB_URI")
 EMBED_MODEL    = "text-embedding-3-small"
+
+# LTR_MODEL = None
+# MODEL_PATH = "ltr_model.pkl" # 학습 스크립트가 생성한 모델 파일
+# try:
+#     LTR_MODEL = joblib.load(MODEL_PATH)
+#     print(f"[LTR] 랭킹 모델 '{MODEL_PATH}' 로드 성공.")
+# except FileNotFoundError:
+#     print(f"[LTR][WARN] LTR 모델 파일 '{MODEL_PATH}'을 찾을 수 없습니다. API가 비활성화될 수 있습니다.")
+# except Exception as e:
+#     print(f"[LTR][ERROR] 모델 로드 중 오류 발생: {e}")
 
 client_ai = OpenAI(api_key=OPENAI_API_KEY)
 client_db = MongoClient(MONGODB_URI)
@@ -454,21 +466,21 @@ def priority_boost(doc: Dict[str, Any]) -> float:
     # 크기
     a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
     if a_size == "대형":
-        score += 0.5
-    # 건강/특수
-    marks = " ".join([
-        doc.get("specialMark","") or "",
-        (doc.get("extractedFeature") or {}).get("noticeable_features","") or "",
-        doc.get("healthChk","") or "",
-    ])
-    if any(w in marks for w in ["불량", "감염", "병", "장애", "실명", "결손", "오염"]):
-        score += 1.0
+        score += 0.7
+    # 건강/특수 -> 건강은 추천에 있어 +- 요소가 둘다 되므로 제외
+    # marks = " ".join([
+    #     doc.get("specialMark","") or "",
+    #     (doc.get("extractedFeature") or {}).get("noticeable_features","") or "",
+    #     doc.get("healthChk","") or "",
+    # ])
+    # if any(w in marks for w in ["불량", "감염", "병", "장애", "실명", "결손", "오염"]):
+    #     score += 1.0
     # 장기 체류
     if days_since(doc.get("noticeSdt")) >= 30:
-        score += 0.5
+        score += 0.8
     # 믹스
     if doc.get("kindNm") in ["믹스견", "한국 고양이"]:
-        score += 0.25
+        score += 0.3
     return score  # 0~3 근사
 
 
@@ -807,6 +819,31 @@ def compute_desired_activity_and_care(ans: Dict[str, Any]) -> Tuple[float, float
 
     return desired_activity, desired_care
 
+def compute_user_experience_score(ans: Dict[str, Any]) -> float:
+    """
+    사용자의 설문 응답을 바탕으로 반려동물 양육 경험 점수를 0-1 사이로 계산합니다.
+    """
+    if not ans:
+        return 0.3  # 정보가 없을 경우 기본값
+
+    pet_history = ans.get("petHistory", "")
+    score = 0.0
+
+    if "현재" in pet_history:
+        score = 1
+    elif "과거" in pet_history:
+        score = 0.5
+    else: # "없음"
+        score = 0.1
+    
+    # 추가 정보로 미세 조정 (예: 가족 수가 많으면 돌봄에 유리)
+    try:
+        if int(ans.get("familyCount", 1)) >= 3:
+            score = min(1.0, score + 0.05)
+    except (ValueError, TypeError):
+        pass
+
+    return score
 
 # -------------------------
 # compat_score + 디테일
@@ -820,10 +857,12 @@ def compat_score_with_details(ans: Dict[str, Any], doc: Dict[str, Any]) -> Tuple
     wsum = 0.0
     details: Dict[str, Any] = {}
 
+    user_exp = compute_user_experience_score(ans)
+
     a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
 
     # 1) 크기
-    w_size = 0.35
+    w_size = 0.25
     sm = size_match(ans.get("preferredSize",""), a_size)
     contrib_size = w_size * sm
     score += contrib_size
@@ -843,7 +882,7 @@ def compat_score_with_details(ans: Dict[str, Any], doc: Dict[str, Any]) -> Tuple
     care_match = 1 - min(1.0, abs(care_time - a_care))
     avg_match = (act_match + care_match) / 2.0
 
-    w_act = 0.25
+    w_act = 0.35
     contrib_act = w_act * avg_match
     score += contrib_act
     wsum  += w_act
@@ -1480,11 +1519,8 @@ def recommend_hybrid(body: HybridRequest):
         user_field_embs = {k: None for k in ["color","activity","appearance","personality"]}
 
     # tuning parameter: how much weight to give field-level matches vs global sim_mix
-    beta = 0.35  # 0..1 — 0 = ignore field-level, 1 = only field-leve
 
     # 감점 가중치 (알레르기/현 반려동물 충돌은 강한 페널티)
-    w_allergy  = 0.6
-    w_conflict = 0.3
 
     # 2) 종 필터: 설문 선호 종 + 쿼리 종
     species_from_survey = survey_preferred_species(survey) if survey else []
@@ -1531,7 +1567,31 @@ def recommend_hybrid(body: HybridRequest):
     # 4) 후보 생성 + 유사도 계산
     candidates: List[Tuple[float, Dict[str,Any], Dict[str,Any], Dict[str, Any]]] = []
 
+    w_sim, w_comp, w_prio, w_loc = 0.40, 0.50, 0.05, 0.05
+    w_allergy, w_conflict = 0.8, 0.5
+    alpha, beta = 0.50, 0.20 # 추후 변경 가능
+
+    if is_generic_query(q):
+        w_sim, w_comp = 0.35, 0.55
+        alpha= 0.30
+    else:
+        w_sim, w_comp = 0.45, 0.45
+        alpha= 0.70
+
     for doc in collection.find(base_filter):
+        is_cat = (doc.get("upKindNm") == "고양이")
+        is_dog = (doc.get("upKindNm") == "개")
+        age_years = _age_in_years(doc.get("age"))
+        is_puppy_kitten = (age_years is not None and age_years <= 1.0)
+        if is_cat:
+            w_sim *= 1.1
+        elif is_dog:
+            w_comp *= 1.1
+        if is_puppy_kitten:
+            w_sim *= 1.15
+        else:
+            w_comp *= 1.15
+
         a_emb = np.array(doc.get("embedding") or [], dtype=np.float32)
         if a_emb.size == 0:
             continue
@@ -1676,3 +1736,132 @@ def recommend_hybrid(body: HybridRequest):
             "reasons": reasons,
         })
     return results
+
+
+# @router.post("/hybrid")
+# def recommend_hybrid(body: HybridRequest):
+#     # --- (변경 없음) 1단계-A: 기본 정보 및 임베딩 준비 ---
+#     q = (body.natural_query or "").strip()
+#     try:
+#         q_emb = _cached_text_embedding(q) if q else None
+#     except Exception as e:
+#         raise HTTPException(500, f"임베딩 생성 오류: {e}")
+
+#     survey: Dict[str, Any] = {}
+#     if body.use_survey and body.user_id:
+#         sdoc = survey_col.find_one({"userId": body.user_id}, sort=[("_id",-1)])
+#         if sdoc:
+#             survey = sdoc.get("answers") or sdoc
+
+#     if not survey:
+#          raise HTTPException(404, f"유저 ID '{body.user_id}'에 대한 설문 데이터를 찾을 수 없습니다.")
+
+#     profile_text = build_profile_text(survey)
+#     p_emb = _cached_text_embedding(profile_text) if profile_text else None
+#     alpha = 0.3 if is_generic_query(q) else 0.7
+
+#     # --- (변경) 1단계-B: 후보군 생성 (Recall) ---
+#     # 목표: 최대한 가볍게, 가능성 있는 후보 200개를 빠르게 추린다.
+#     # 복잡한 계산은 모두 제외하고 'sim_mix' 점수만 사용한다.
+#     species_from_query = extract_species(q)
+#     base_species: List[str] = []
+#     if species_from_query:
+#         base_species = species_from_query
+#     elif survey:
+#         species_from_survey = survey_preferred_species(survey)
+#         if species_from_survey:
+#             base_species = species_from_survey
+
+#     # 최종 DB 필터 생성
+#     base_filter: Dict[str, Any] = {}
+#     if base_species:
+#         if len(base_species) == 1:
+#             base_filter["upKindNm"] = base_species[0]
+#         else:
+#             base_filter["upKindNm"] = {"$in": base_species}
+
+#     initial_candidates = []
+#     for doc in collection.find(base_filter):
+#         a_emb = np.array(doc.get("embedding", []), dtype=np.float32)
+#         if a_emb.size == 0:
+#             continue
+        
+#         sim_q = cosine_similarity(q_emb, a_emb) if q_emb is not None else 0.0
+#         sim_p = cosine_similarity(p_emb, a_emb) if p_emb is not None else 0.0
+#         sim_mix = (alpha * sim_q) + ((1 - alpha) * sim_p)
+        
+#         # sim_mix 점수와 doc만 저장. 이 단계에서 다른 계산은 하지 않음.
+#         initial_candidates.append((sim_mix, doc))
+
+#     # sim_mix 점수가 높은 순으로 정렬하여 상위 50개만 pool로 사용
+#     initial_candidates.sort(key=lambda x: x[0], reverse=True)
+#     candidate_pool = initial_candidates[:50]
+    
+#     if not candidate_pool:
+#         return []
+
+#     # --- (변경) 2단계: LTR 모델로 재정렬 (Re-ranking) ---
+#     # 목표: 1단계에서 추려진 200개 후보에 대해서만 정밀한 점수를 계산하고 LTR 모델로 최종 순위를 매긴다.
+
+#     if LTR_MODEL is None:
+#         raise HTTPException(503, "추천 모델을 현재 사용할 수 없습니다. 잠시 후 다시 시도해주세요.")
+
+#     # 재정렬할 후보들의 피처와 메타 정보를 담을 리스트
+#     to_rank_items = []
+#     for sim_mix, doc in candidate_pool: # pool에는 (sim_mix, doc) 튜플이 들어있음
+#         # 이 단계에서 비로소 무거운 점수들을 계산
+#         comp, comp_details = compat_score_with_details(survey, doc)
+#         prio = priority_boost(doc)
+#         loc = location_score(survey.get("address"), doc.get("careAddr")) if survey.get("address") else 0.0
+#         allergy = compute_allergy_penalty(survey, doc)
+#         conflict = compute_pet_conflict_penalty(survey, doc)
+
+#         # LTR 피처 생성 및 이유 생성에 필요한 모든 정보를 meta에 저장
+#         meta = {
+#             "sim": sim_mix,
+#             "comp": comp,
+#             "prio": prio,
+#             "loc": loc,
+#             "allergy_penalty": allergy,
+#             "pet_conflict_penalty": conflict,
+#             "comp_details": comp_details  # 이유 생성 시 필요
+#         }
+        
+#         # 학습 때와 동일한 함수를 사용해 피처 벡터 생성
+#         features = extract_features_for_ltr(doc, meta)
+        
+#         to_rank_items.append({'doc': doc, 'meta': meta, 'features': features})
+
+#     # 모든 후보의 피처 벡터를 한 번에 모델에 전달하여 랭킹 점수 예측
+#     feature_vectors = [item['features'] for item in to_rank_items]
+#     ranking_scores = LTR_MODEL.predict(feature_vectors)
+
+#     # 예측된 점수를 각 후보와 다시 매핑
+#     scored_candidates = []
+#     for i, item in enumerate(to_rank_items):
+#         scored_candidates.append((ranking_scores[i], item['doc'], item['meta']))
+    
+#     # LTR 모델이 예측한 점수가 높은 순으로 최종 정렬
+#     scored_candidates.sort(key=lambda x: x[0], reverse=True)
+
+
+#     # --- (변경 없음) 3단계: 결과 포맷팅 및 반환 ---
+#     top_n = scored_candidates[:body.limit]
+#     results = []
+#     for score, doc, meta in top_n:
+#         results.append({
+#             "final_score": safe_round(score, 4), # LTR 모델의 예측 점수
+#             "sim": safe_round(meta.get("sim", 0.0), 4),
+#             "compat": safe_round(meta.get("comp", 0.0), 4),
+#             "desertionNo": doc.get("desertionNo"),
+#             "kindFullNm": doc.get("kindFullNm"),
+#             # meta 데이터가 이미 계산되어 있으므로 build_reasons에 바로 전달
+#             "reasons": build_reasons(survey, q, meta, doc),
+#             "upKindNm": doc.get("upKindNm"),
+#             "colorCd": doc.get("colorCd"),
+#             "age": doc.get("age"),
+#             "careAddr": doc.get("careAddr"),
+#             "specialMark": doc.get("specialMark"),
+#         })
+        
+#     return results

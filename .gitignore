@@ -4,3 +4,10 @@ __pycache__/
 .venv
 created_images/
 firebase-key.json
+
+__init__.py
+create_dummy_data.py
+model_test.py
+train_ltr_model.py
+feature_importance_gain.png
+ltr_model.pkl
