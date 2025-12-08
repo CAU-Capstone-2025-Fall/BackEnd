@@ -11,10 +11,9 @@ import re
 import numpy as np
 from functools import lru_cache
 from utils.location import location_score
-from utils.filed_embedding import user_to_4texts
 import json
 from pathlib import Path
-from utils.train_ltr_model import extract_features_for_ltr
+# from utils.train_ltr_model import extract_features_for_ltr
 
 router = APIRouter(prefix="/recommand", tags=["recommand"])
 
@@ -275,10 +274,72 @@ def _semantic_has_keywords(
             return True
     return False
 
+COLOR_KEYWORDS = [
+        "검은색","검정","흰색","하얀","갈색","회색","치즈","베이지","크림",
+        "점박이","얼룩", "검은", "흰"
+    ]
+POS_ACTIVITY_WORDS = ["활발", "사교", "사람 좋아", "장난", "에너지", "놀이", "활동적"]
+NEG_ACTIVITY_WORDS = ["낯가림", "겁", "경계", "소심", "예민", "조심", "차분", "조용", "온순"]
+
+def _smart_has_keywords(
+    text: Optional[str],
+    keywords: List[str],
+    threshold: float = 0.60,
+) -> bool:
+    """
+    1순위: _text_has_keywords 로 빠른 문자열 기반 매칭
+    2순위: 안 잡히면 _semantic_has_keywords 로 의미 기반 매칭
+    """
+    if not text or not keywords:
+        return False
+
+    # 1단계: 빠른 텍스트 매칭
+    if _text_has_keywords(text, keywords):
+        return True
+
+    # 2단계: 의미 기반 매칭 (임베딩 사용)
+    return _semantic_has_keywords(text, keywords, threshold=threshold)
 
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 
+def user_to_4texts(user_query: Optional[str], profile: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    profile = profile or {}
+    color_parts: List[str] = []
+    if user_query:
+        for c in COLOR_KEYWORDS:
+            if _smart_has_keywords(user_query, [c], threshold=0.65):
+                color_parts.append(c)
+        if color_parts:
+            color_parts = list(dict.fromkeys(color_parts))
+    # activity: from profile.activityLevel and user_query mentions like '활발'
+    activity_parts: List[str] = []
+    if profile.get("activityLevel"):
+        activity_parts.append(f"활동수준: {profile.get('activityLevel')}")
+    if user_query:
+        # 활발한 타입 선호
+        if _smart_has_keywords(user_query, POS_ACTIVITY_WORDS, threshold=0.60):
+            activity_parts.append("활발")
+        # 차분한 타입 선호
+        if _smart_has_keywords(user_query, NEG_ACTIVITY_WORDS, threshold=0.60):
+            activity_parts.append("차분")
+    # appearance: from userQuery (e.g. '털이 짧은', '점박이')
+    appearance_parts = []
+    if user_query:
+        # naive: include the raw query as appearance candidate too
+        appearance_parts.append(user_query)
+    # personality: preferredPersonality, expectations
+    personality_parts = []
+    if profile.get("preferredPersonality"):
+        personality_parts.append(", ".join(profile.get("preferredPersonality") or []))
+    if profile.get("expectations"):
+        personality_parts.append(", ".join(profile.get("expectations") or []))
+    return {
+        "color": " ".join(color_parts).strip(),
+        "activity": " | ".join(activity_parts).strip(),
+        "appearance": " | ".join(appearance_parts).strip(),
+        "personality": " | ".join(personality_parts).strip()
+    }
 
 # -------------------------
 # 도메인 파싱 / 추론 함수들
@@ -692,8 +753,6 @@ def infer_activity_and_care(doc: Dict[str, Any]) -> Tuple[float, float]:
         (doc.get("extractedFeature") or {}).get("noticeable_features", "") or ""
     ]).lower()
 
-    POS_ACTIVITY_WORDS = ["활발", "사교", "사람 좋아", "장난", "에너지", "놀이"]
-    NEG_ACTIVITY_WORDS = ["낯가림", "겁", "경계", "소심", "예민", "조심"]
     HEALTH_WORDS       = ["병", "감염", "상처", "치료", "질환", "장애", "실명", "결손", "아픈", "염증"]
     SKIN_COAT_WORDS    = ["피부", "털빠짐", "비듬", "기생충", "염증"]
 
@@ -819,31 +878,23 @@ def compute_desired_activity_and_care(ans: Dict[str, Any]) -> Tuple[float, float
 
     return desired_activity, desired_care
 
-def compute_user_experience_score(ans: Dict[str, Any]) -> float:
-    """
-    사용자의 설문 응답을 바탕으로 반려동물 양육 경험 점수를 0-1 사이로 계산합니다.
-    """
-    if not ans:
-        return 0.3  # 정보가 없을 경우 기본값
+def compute_appearance_score(
+    user_field_embs: Dict[str, np.ndarray],
+    doc_field_embs: Dict[str, np.ndarray],
+) -> float:
+    appearance_sim = cosine_similarity(user_field_embs["appearance"], doc_field_embs["appearance"])
+    color_sim = cosine_similarity(user_field_embs["color"], doc_field_embs["color"])
 
-    pet_history = ans.get("petHistory", "")
-    score = 0.0
+    return (0.65 * appearance_sim) + (0.35 * color_sim)
 
-    if "현재" in pet_history:
-        score = 1
-    elif "과거" in pet_history:
-        score = 0.5
-    else: # "없음"
-        score = 0.1
-    
-    # 추가 정보로 미세 조정 (예: 가족 수가 많으면 돌봄에 유리)
-    try:
-        if int(ans.get("familyCount", 1)) >= 3:
-            score = min(1.0, score + 0.05)
-    except (ValueError, TypeError):
-        pass
+def compute_personality_score(
+    user_field_embs: Dict[str, np.ndarray],
+    doc_field_embs: Dict[str, np.ndarray],
+) -> float:
+    personality_sim = cosine_similarity(user_field_embs["personality"], doc_field_embs["personality"])
+    activity_sim = cosine_similarity(user_field_embs["activity"], doc_field_embs["activity"])
 
-    return score
+    return (personality_sim + activity_sim) / 2.0
 
 # -------------------------
 # compat_score + 디테일
@@ -856,8 +907,6 @@ def compat_score_with_details(ans: Dict[str, Any], doc: Dict[str, Any]) -> Tuple
     score = 0.0
     wsum = 0.0
     details: Dict[str, Any] = {}
-
-    user_exp = compute_user_experience_score(ans)
 
     a_size = parse_size((doc.get("extractedFeature") or {}).get("rough_size",""))
 
@@ -1044,13 +1093,8 @@ def find_query_color_keywords(q: str) -> List[str]:
     ql = q.lower()
     kws: List[str] = []
 
-    KEYWORDS = [
-        "검은색","검정","흰색","하얀","갈색","회색","치즈","베이지","크림",
-        "점박이","얼룩"
-    ]
-
     # 1차: substring
-    for k in KEYWORDS:
+    for k in COLOR_KEYWORDS:
         if k.lower() in ql:
             kws.append(k)
 
@@ -1064,7 +1108,7 @@ def find_query_color_keywords(q: str) -> List[str]:
         return kws
 
     THRESHOLD = 0.60
-    for k in KEYWORDS:
+    for k in COLOR_KEYWORDS:
         kw_emb = _get_keyword_embedding(k)
         sim = cosine_similarity(q_emb, kw_emb)
         if sim >= THRESHOLD:
@@ -1565,23 +1609,32 @@ def recommend_hybrid(body: HybridRequest):
     candidates: List[Tuple[float, Dict[str,Any], Dict[str,Any], Dict[str, Any]]] = []
 
     w_sim, w_comp, w_prio, w_loc = 0.40, 0.50, 0.05, 0.05
+    w_apps, w_pers = 0.50, 0.50
     w_allergy, w_conflict = 0.8, 0.5
     alpha = 0.7 * specificity  # 0.0 ~ 0.7
     w_sim, w_comp = 0.35+0.1*specificity, 0.55-0.1*specificity
 
-    for doc in collection.find(base_filter):
+    projection = {"embedding": 1, "desertionNo": 1, "upKindNm": 1, "kindNm": 1, "age": 1, "noticeSdt": 1, 
+                  "specialMark": 1, "healthChk": 1, "extractedFeature": 1, "fieldEmbeddings": 1, "careAddr": 1,
+                  "colorCd": 1, "kindFullNm": 1}
+
+    for doc in collection.find(base_filter, projection):
         is_cat = (doc.get("upKindNm") == "고양이")
         is_dog = (doc.get("upKindNm") == "개")
         age_years = _age_in_years(doc.get("age"))
         is_puppy_kitten = (age_years is not None and age_years <= 1.0)
         if is_cat:
-            w_sim *= 1.1
+            w_apps *= 0.8
+            w_pers *= 1.2
+            if is_puppy_kitten:
+                w_apps *= 1.2
+            else:
+                w_pers *= 1.2
         elif is_dog:
-            w_comp *= 1.1
-        if is_puppy_kitten:
-            w_sim *= 1.15
-        else:
-            w_comp *= 1.15
+            w_apps *= 1.2
+            w_pers *= 0.8
+            if not is_puppy_kitten:
+                w_pers *= 1.2
 
         a_emb = np.array(doc.get("embedding") or [], dtype=np.float32)
         if a_emb.size == 0:
@@ -1591,25 +1644,17 @@ def recommend_hybrid(body: HybridRequest):
         sim_p = cosine_similarity(p_emb, a_emb) if p_emb is not None else 0.0
         base_mix = (alpha * sim_q) + ((1 - alpha) * sim_p) if (q_emb is not None or p_emb is not None) else 0.0
 
-        field_scores: Dict[str, float] = {"color":0.0, "activity":0.0, "appearance":0.0, "personality":0.0}
+        field_scores: Dict[str, float] = {"appearance":0.0, "personality":0.0}
         try:
             doc_field_embs_raw = doc.get("fieldEmbeddings") or {}
-            for k in ["color","activity","appearance","personality"]:
-                arr = doc_field_embs_raw.get(k)
-                if arr:
-                    fvec = np.array(arr, dtype=np.float32)
-                else:
-                    fvec = np.zeros((1536,), dtype=np.float32)
-                uvec = user_field_embs.get(k)
-                if uvec is None or uvec.size == 0:
-                    fsim = 0.0
-                else:
-                    fsim = cosine_similarity(uvec, fvec)
-                field_scores[k] = float(fsim)
+            apps_score = compute_appearance_score(user_field_embs, doc_field_embs_raw)
+            pers_score = compute_personality_score(user_field_embs, doc_field_embs_raw)
+            field_scores["appearance"] = float(apps_score)
+            field_scores["personality"] = float(pers_score)
         except Exception:
             # on any error, treat field scores as zeroes
             field_scores = {k:0.0 for k in field_scores.keys()}
-        field_weights = {"color":0.35, "activity":0.35, "appearance":0.20, "personality":0.10}
+        field_weights = {"appearance":0.55, "personality":0.45}
         total_w = sum(field_weights.values())
         field_match_score = sum(field_scores[k] * (field_weights[k] / total_w) for k in field_scores.keys())
 
@@ -1621,6 +1666,7 @@ def recommend_hybrid(body: HybridRequest):
             sim_f = max(cosine_similarity(a_emb, fe) for fe in fav_emb_list)
 
         sim_mix = merge_similarity_scores(base_mix, sim_f, field_match_score)
+        sim_without_fields = merge_similarity_scores(base_mix, sim_f, 0.0)
 
         if sim_mix <= 0:  # 완전 무관한 경우 제거
             continue
@@ -1662,21 +1708,28 @@ def recommend_hybrid(body: HybridRequest):
         allergy_penalty  = compute_allergy_penalty(survey, doc)
         conflict_penalty = compute_pet_conflict_penalty(survey, doc)
 
-        sim_term      = w_sim * sim_mix
+        sim_term      = w_sim * sim_without_fields
+        apps_term     = w_apps * field_scores.get("appearance", 0.0)
+        pers_term     = w_pers * field_scores.get("personality", 0.0)
         comp_term     = w_comp * comp
         prio_term     = w_prio * (prio / 3.0)
         loc_term      = w_loc * loc_component
         allergy_term  = -w_allergy * allergy_penalty
         conflict_term = -w_conflict * conflict_penalty
 
-        final_raw = sim_term + comp_term + prio_term + loc_term + allergy_term + conflict_term
-        final = _clamp01(final_raw)
+        final1 = sim_term + comp_term + prio_term + loc_term
+        final2 = (apps_term + pers_term)/ (w_apps + w_pers) if (w_apps + w_pers) > 0 else 0.0
+        final3 = allergy_term + conflict_term / 2
+        final = final1 + final2 + final3 / 3
+        final = _clamp01(final)
 
         meta = {
             "sim": sim_mix,
             "sim_q": extra_meta.get("sim_q", 0.0),
             "sim_p": extra_meta.get("sim_p", 0.0),
             "sim_f": extra_meta.get("sim_f", 0.0),
+            "apps_score": extra_meta.get("field_match", {}).get("appearance", 0.0),
+            "pers_score": extra_meta.get("field_match", {}).get("personality", 0.0),
             "comp": comp,
             "prio": prio,
             "loc": loc_raw,
@@ -1712,6 +1765,8 @@ def recommend_hybrid(body: HybridRequest):
         results.append({
             "final": safe_round(s, 4, default=0.0),
             "sim": safe_round(meta.get("sim", 0.0), 4, default=0.0),
+            "appearance": safe_round(meta.get("apps_score", 0.0), 4, default=0.0),
+            "personality": safe_round(meta.get("pers_score", 0.0), 4, default=0.0),
             "compat": safe_round(meta.get("comp", 0.0), 4, default=0.0),
             "priority": safe_round(meta.get("prio", 0.0), 3, default=0.0),
             "location": safe_round(meta.get("loc", 0.0), 4, default=0.0),

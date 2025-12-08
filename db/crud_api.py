@@ -1,3 +1,4 @@
+import math
 import os
 import re
 from datetime import datetime
@@ -60,10 +61,21 @@ class Animal(BaseModel):
     improve: Optional[str] = None
     extractedFeature: Optional[str] = None
 
+def sigmoid(x):
+    """점수를 0과 1 사이의 값으로 변환하는 시그모이드 함수"""
+    if x >= 0:
+        z = math.exp(-x)
+        return 1 / (1 + z)
+    else:
+        z = math.exp(x)
+        return z / (1 + z)
+
 def animal_serializer(animal) -> dict:
     animal = dict(animal)
     animal["id"] = str(animal["_id"])
     del animal["_id"]
+    # del animal["embedding"]
+    # del animal["fieldEmbeddings"]
     return animal
 
 def parse_age(age_str: str):
@@ -77,7 +89,7 @@ def parse_age(age_str: str):
         day = int(day_str.group(1)) if day_str else None
     return year, day
 
-def get_priority_score(animal):
+# def get_priority_score(animal):
     score = 0
     today = datetime.today().date()
 
@@ -91,7 +103,7 @@ def get_priority_score(animal):
     if days >= 60:
         score += 2
     if days > 90:
-        score += days
+        score += 3
     # 입소 후 3개월 이상인 경우 최대 200점 한도
     # score += min(score, 200)
 
@@ -99,6 +111,10 @@ def get_priority_score(animal):
     if animal.get("neuterYn") == "N":
         score += 0.5
     
+    #예방접종 여부에 따른 가산점
+    if not animal.get("vaccinationChk"):
+        score += 0.5
+
     # 건강 상태에 따른 가산점
     health_list = ["불량", "감염", "병", "장애", "실명", "결손", "오염"]
     health = animal.get("specialMark", "").lower()
@@ -160,6 +176,76 @@ def get_priority_score(animal):
                 score += 0.5
 
     return score
+
+def get_priority_score(animal: dict) -> float:
+    """
+    SHAP 분석 결과와 정확한 데이터 정의를 바탕으로 동물의 입양 우선순위 점수를 계산합니다.
+    점수가 1에 가까울수록 입양이 어려운, 도움이 필요한 동물입니다.
+
+    Args:
+        animal (dict): 'HealthCondition', 'AgeMonths' 등 분석된 특성을 포함한 동물 정보.
+    """
+    score = 0
+    today = datetime.today().date()
+
+    # --- SHAP 분석 기반 가중치 (정확한 정보로 재조정) ---
+    # HealthCondition과 AgeMonths의 영향력이 가장 컸으므로 가장 높은 가중치를 부여합니다.
+    weights = {
+        'unhealthy': 6.0,        # (가장 큰 음의 영향) 건강이 나쁠 경우(1) 높은 가점
+        'age_year': 2.0,         # (두 번째 큰 음의 영향) 나이 한 살당 가점
+        'size_small': 3.0,       # (음의 영향) 소형일 경우 가점
+        'size_large': 3.0,       # (음의 영향) 대형일 경우 가점
+        'vaccinated': 2.0,       # (데이터 기반 음의 영향) 백신 미접종(0) 시 가점
+        'days_in_shelter': 0.05, # (상대적으로 낮은 영향) 보호소 체류일 하루당 가점
+        'mixed_breed': 1.0        # (추가 고려 요소) 비품종일 경우 가점
+    }
+
+    # 1. 건강 상태: 좋지 않을 경우(1) 점수 급증 (가장 중요한 요소)
+    health_list = ["불량", "감염", "병", "장애", "실명", "결손", "오염"]
+    health = animal.get("specialMark", "").lower()
+    if any(word in health for word in health_list):
+        score += weights['unhealthy']
+
+    # 2. 나이: 많을수록 점수 급증 (두 번째로 중요한 요소)
+    age_str = animal.get("age")
+    year, day = parse_age(age_str)
+    if day: # 1년 미만
+        score += 0
+    elif year:
+        score += min(year * weights['age_year'], 20)
+
+    # 3. 크기: 소형 & 대형 점수 증가
+    feature = animal.get("extractedFeature", "")
+    for key in feature:
+        if key == "rough_size":
+            if any(word in feature[key] for word in ["큼", "큰 편", "대형"]):
+                score += weights['size_large']
+            elif any(word in feature[key] for word in ["중간", "중형"]):
+                score += weights['size_small']
+
+    # 4. 백신 접종 여부: 미접종(0) 시 점수 증가
+    if animal.get("vaccinationChk") == 0:
+        score += weights['vaccinated']
+    
+    # 5. 보호소 체류 기간: 길수록 점수 증가
+    happen_dt = datetime.strptime(animal["happenDt"], "%Y%m%d")
+    days = (today - happen_dt.date()).days
+    days = days - 14 # 공고 기간 가산점 제외
+    # 입소 기간이 길수록 가산점 증가
+    score += min(days * weights['days_in_shelter'], 10)
+
+    # 6. 품종: 비품종일 경우 가점 추가
+    breed = animal.get("Breed", "")
+    if breed in ["믹스견", "한국 고양이"]:
+        score += weights['mixed_breed']
+
+    # 최종 점수를 0과 1 사이로 정규화 (점수 분포 조절을 위해 C값을 15로 설정)
+    # score / (score + C) 형태의 변형된 시그모이드 함수
+    print("Raw score:", score)
+    normalization_factor = 15
+    normalized_score = score / (score + normalization_factor)
+
+    return normalized_score # 최종 점수가 0과 1 사이를 벗어나지 않도록 보장
 
 # CREATE
 @router.post("/animal", response_model=dict)
