@@ -1319,14 +1319,14 @@ def build_reasons(
             "evidence": doc.get("careAddr") or "",
             "reason": "현재 거주지와 보호소 거리가 가까워 방문·입양 절차가 비교적 편리해요.",
         })
-    elif 0.0 < loc_score < 0.4:
-        reasons.append({
-            "type": "location_penalty",
-            "label": "거리 부담",
-            "score": float(loc_score),
-            "evidence": doc.get("careAddr") or "",
-            "reason": "보호소와 거리가 멀어서 방문·이동에 시간이 더 들 수 있어요.",
-        })
+    # elif 0.0 < loc_score < 0.4:
+    #     reasons.append({
+    #         "type": "location_penalty",
+    #         "label": "거리 부담",
+    #         "score": float(loc_score),
+    #         "evidence": doc.get("careAddr") or "",
+    #         "reason": "보호소와 거리가 멀어서 방문·이동에 시간이 더 들 수 있어요.",
+    #     })
 
     # 6) 우선순위(장기 보호 / 건강 등)
     prio = meta.get("prio", 0.0) or 0.0
